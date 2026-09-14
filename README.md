@@ -7,7 +7,7 @@
 
 > **Relatório completo:**
 > [`relatorio_mvp.pdf`](relatorio_mvp.pdf) &nbsp;·&nbsp;
-> [`relatorio_mvp.html`](relatorio_mvp.html)
+> [`relatorio_mvp.html`](https://renatavirginia.github.io/MVP_Engenharia_Dados_PUC/relatorio_mvp.html)
 >
 > **Execução do pipeline no Databricks (com outputs):**
 > [`pipeline_completo.html`](https://renatavirginia.github.io/MVP_Engenharia_Dados_PUC/pipeline_completo.html)
