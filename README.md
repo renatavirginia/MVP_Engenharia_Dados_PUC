@@ -10,7 +10,7 @@
 > [`relatorio_mvp.html`](relatorio_mvp.html)
 >
 > **Execução do pipeline no Databricks (com outputs):**
-> [`pipeline_completo.html`](pipeline_completo.html)
+> [`pipeline_completo.html`](https://renatavirginia.github.io/MVP_Engenharia_Dados_PUC/pipeline_completo.html)
 
 ---
 
