@@ -249,14 +249,18 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 +-------------+  |                           |  +------------+
 id_produto (PK)  | id_produto / id_loja      |  id_loja (PK)
 produto_id_orig  | id_data                   |  loja_id_orig
-nome_produto     | unidades_vendidas         |  nome_loja
-categoria        | nivel_estoque             |  regiao
+nome_produto     | categoria (*)             |  nome_loja
+                 | regiao    (*)             |
+                 | unidades_vendidas         |
+                 | nivel_estoque             |
                  | preco_unitario / desconto |
                  | feriado_ou_promocao_ativo |
                  | demanda_media_7d (calc.)  |
                  | dias_cobertura   (calc.)  |
                  | flag_estoque_critico(calc)|
-                 +---------------------------+</div>
+                 +---------------------------+
+(*) varia por registro: mesmo produto/loja pode ter
+    categorias/regioes distintas no dataset sintetico.</div>
 </div>
 
 <h3>Catalogo de Dados</h3>
@@ -297,7 +301,6 @@ categoria        | nivel_estoque             |  regiao
 <tr><td>nivel_estoque</td><td>Integer</td><td>&gt;= 0 (negativos removidos)</td><td>Estoque disponivel no dia</td></tr>
 <tr><td>unidades_vendidas</td><td>Integer</td><td>&gt;= 0 (negativos removidos)</td><td>Unidades vendidas no dia</td></tr>
 <tr><td>unidades_pedidas</td><td>Integer</td><td>&gt;= 0</td><td>Unidades pedidas/repostas no dia</td></tr>
-<tr><td>previsao_demanda</td><td>Double</td><td>&gt;= 0 (nulos &rarr; 0)</td><td>Previsao de demanda para o dia</td></tr>
 <tr><td>preco_unitario</td><td>Double</td><td>&gt; 0 (preco &lt;= 0 removido)</td><td>Preco unitario do produto</td></tr>
 <tr><td>desconto</td><td>Double</td><td>&gt;= 0 (nulos &rarr; 0)</td><td>Desconto aplicado no dia</td></tr>
 <tr><td>condicao_climatica</td><td>String</td><td>Cloudy | Rainy | Snowy | Sunny | "NAO_INFORMADO"</td><td>Condicao climatica do dia</td></tr>
@@ -455,8 +458,8 @@ Duplicatas detectadas: 0
 <div class="pre">Faixa de datas: 2022-01-01 a 2024-01-01 (2 anos completos)
 Categorias (5): CLOTHING | ELECTRONICS | FURNITURE | GROCERIES | TOYS
 Regioes (4):    EAST | NORTH | SOUTH | WEST
-Clima:          Rainy | Snowy | Sunny | Windy
-Sazonalidade:   FALL | SPRING | SUMMER | WINTER</div>
+Clima:          Cloudy | Rainy | Snowy | Sunny
+Sazonalidade:   AUTUMN | SPRING | SUMMER | WINTER</div>
 </div>
 
 <div class="keep-together">
