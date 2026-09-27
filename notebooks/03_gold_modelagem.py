@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # Notebook 03: Modelagem Gold (Esquema Estrela)
 # MAGIC **Pipeline:** Retail Store Inventory | Risco de Ruptura de Estoque
@@ -10,12 +14,14 @@
 # MAGIC ### Regra de negócio: Flag de Estoque Crítico
 # MAGIC O dataset não tem uma coluna explícita de ruptura, então criamos essa métrica a partir dos dados:
 # MAGIC
-# MAGIC > **`flag_estoque_critico = True`** quando `dias_cobertura < 7`
+# MAGIC > **`flag_estoque_critico = True`** quando `dias_cobertura < p25(dias_cobertura)`
 # MAGIC >
 # MAGIC > onde `dias_cobertura = nivel_estoque / demanda_media_7d`
 # MAGIC
-# MAGIC **Por que 7 dias?** Esse é o critério padrão para varejo de ciclo curto. Abaixo desse limiar
-# MAGIC o estoque entra em zona de risco antes do próximo ciclo de reabastecimento.
+# MAGIC **Critério adaptativo:** o limiar é o percentil 25 da distribuição real de `dias_cobertura`
+# MAGIC calculado sobre a própria base, sinalizando os 25% de registros com pior cobertura relativa.
+# MAGIC Um limiar fixo de 7 dias marcaria ~99% dos registros como críticos neste dataset (cobertura
+# MAGIC média real ≈ 2 dias), tornando a flag inútil como discriminador analítico.
 
 # COMMAND ----------
 
@@ -47,15 +53,13 @@ print(f"Registros na Silver: {df_silver.count():,}")
 
 df_dim_produto = (
     df_silver
-    .select("produto_id", "categoria")
+    .select("produto_id")
     .distinct()
-    .orderBy("produto_id")
-    .withColumn("id_produto", F.monotonically_increasing_id().cast(IntegerType()))
+    .withColumn("id_produto", F.row_number().over(Window.orderBy("produto_id")))
     .select(
         F.col("id_produto"),
         F.col("produto_id").alias("produto_id_orig"),
         F.col("produto_id").alias("nome_produto"),
-        F.col("categoria"),
     )
 )
 
@@ -79,15 +83,13 @@ df_dim_produto.display()
 
 df_dim_loja = (
     df_silver
-    .select("loja_id", "regiao")
+    .select("loja_id")
     .distinct()
-    .orderBy("loja_id")
-    .withColumn("id_loja", F.monotonically_increasing_id().cast(IntegerType()))
+    .withColumn("id_loja", F.row_number().over(Window.orderBy("loja_id")))
     .select(
         F.col("id_loja"),
         F.col("loja_id").alias("loja_id_orig"),
         F.col("loja_id").alias("nome_loja"),
-        F.col("regiao"),
     )
 )
 
@@ -111,7 +113,7 @@ df_dim_loja.display()
 
 df_dim_data = (
     df_silver
-    .select("data", "feriado")
+    .select("data")
     .distinct()
     .withColumn("id_data",    F.date_format(F.col("data"), "yyyyMMdd").cast(IntegerType()))
     .withColumn("ano",        F.year(F.col("data")))
@@ -127,7 +129,6 @@ df_dim_data = (
         "nome_mes",
         "dia_semana",
         "trimestre",
-        "feriado",
     )
     .orderBy("id_data")
 )
@@ -158,7 +159,7 @@ window_7d = (
     .rowsBetween(-6, 0)  # janela dos últimos 7 dias (incluindo o dia atual)
 )
 
-df_com_metricas = (
+df_com_cobertura = (
     df_silver
     .withColumn(
         "demanda_media_7d",
@@ -171,10 +172,15 @@ df_com_metricas = (
             F.round(F.col("nivel_estoque") / F.col("demanda_media_7d"), 2)
         ).otherwise(999.0)  # sem demanda = sem risco
     )
-    .withColumn(
-        "flag_estoque_critico",
-        F.col("dias_cobertura") < 7
-    )
+)
+
+# Limiar adaptativo: percentil 25 da distribuição real de cobertura
+p25_cobertura = df_com_cobertura.approxQuantile("dias_cobertura", [0.25], 0.01)[0]
+print(f"Limiar adaptativo (p25 de dias_cobertura): {p25_cobertura:.2f} dias")
+
+df_com_metricas = df_com_cobertura.withColumn(
+    "flag_estoque_critico",
+    F.col("dias_cobertura") < p25_cobertura
 )
 
 print("=== Distribuição da flag de estoque crítico ===")
@@ -211,13 +217,14 @@ df_fato = (
         F.col("id_data"),
         F.col("id_produto"),
         F.col("id_loja"),
+        F.col("categoria"),
+        F.col("regiao"),
         F.col("unidades_vendidas"),
         F.col("unidades_pedidas"),
         F.col("nivel_estoque"),
         F.col("preco_unitario"),
         F.col("desconto"),
-        F.col("em_promocao"),
-        F.col("feriado"),
+        F.col("feriado_ou_promocao_ativo"),
         F.col("condicao_climatica"),
         F.col("sazonalidade"),
         F.col("previsao_demanda"),
@@ -273,6 +280,35 @@ print(f"  id_data nulos   : {fato.filter(F.col('id_data').isNull()).count()}")
 # MAGIC ### Regra de ruptura aplicada
 # MAGIC - `demanda_media_7d` = média móvel de 7 dias de `unidades_vendidas` por produto+loja
 # MAGIC - `dias_cobertura` = `nivel_estoque / demanda_media_7d`
-# MAGIC - `flag_estoque_critico` = `dias_cobertura < 7`
+# MAGIC - `flag_estoque_critico` = `dias_cobertura < p25(dias_cobertura)` (limiar adaptativo — 25% piores coberturas)
 # MAGIC
 # MAGIC **Próximo passo:** Notebook `04_qualidade_dados` para verificação de qualidade.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Validação obrigatória: contagem fato == silver
+
+# COMMAND ----------
+
+silver_count = spark.table(f"{CATALOG}.{SCHEMA_SILVER}.{TABLE_SILVER}").count()
+fato_count   = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.fato_estoque_diario").count()
+
+assert fato_count == silver_count, (
+    f"ERRO DE GRANULARIDADE: fato_estoque_diario tem {fato_count:,} linhas "
+    f"mas silver tem {silver_count:,}. Verifique as dimensões."
+)
+print(f"[OK] Validação aprovada: fato = silver = {fato_count:,} registros")
+
+# Chaves surrogate únicas nas dimensões (evita fan-out nos joins do notebook 05)
+for tabela, chave in [("dim_produto", "id_produto"), ("dim_loja", "id_loja"), ("dim_data", "id_data")]:
+    dim = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.{tabela}")
+    total, distintos = dim.count(), dim.select(chave).distinct().count()
+    assert total == distintos, f"ERRO: {tabela}.{chave} tem {total - distintos} valores repetidos"
+    print(f"[OK] {tabela}.{chave} único ({total} registros)")
+
+# categoria e regiao variam por registro no dataset (o mesmo produto aparece em várias
+# categorias e a mesma loja em várias regiões), por isso ficam na fato e não nas dimensões.
+fato_cols = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.fato_estoque_diario").columns
+assert "categoria" in fato_cols and "regiao" in fato_cols, "ERRO: categoria/regiao ausentes na fato"
+print("[OK] categoria e regiao gravadas na fato (atributos por registro)")

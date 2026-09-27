@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # Pipeline Completo: Risco de Ruptura de Estoque no Varejo
 # MAGIC
@@ -18,13 +22,17 @@
 # MAGIC **Dataset:** Retail Store Inventory Forecasting Dataset (Kaggle | Anirudh Chauhan | CC0)
 # MAGIC
 # MAGIC **Regra de negócio:**
-# MAGIC > `flag_estoque_critico = True` quando `dias_cobertura < 7`
+# MAGIC > `flag_estoque_critico = True` quando `dias_cobertura < p25(dias_cobertura)` (limiar adaptativo)
 # MAGIC > onde `dias_cobertura = nivel_estoque / demanda_media_7d`
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Configuração Geral
+
+# COMMAND ----------
+
+# MAGIC %pip install seaborn -q
 
 # COMMAND ----------
 
@@ -230,24 +238,21 @@ df = (
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2.4 Separação da coluna feriado/promoção
+# MAGIC ## 2.4 Indicador feriado_ou_promocao_ativo
+# MAGIC
+# MAGIC A coluna `feriado_ou_promocao` é um inteiro binário (0 ou 1) que não distingue
+# MAGIC feriado de promoção — qualquer separação seria arbitrária e incorreta.
+# MAGIC Criamos um único indicador booleano fiel ao dado original.
 
 # COMMAND ----------
 
 print("Valores únicos em feriado_ou_promocao:")
 df.select("feriado_ou_promocao").distinct().show()
 
+# Coluna original é inteiro 0/1 — não distingue feriado de promoção
 df = df.withColumn(
-    "em_promocao",
-    F.when(F.lower(F.col("feriado_ou_promocao")).contains("promotion"), True)
-     .when(F.lower(F.col("feriado_ou_promocao")).contains("promo"), True)
-     .when(F.col("feriado_ou_promocao") == "1", True)
-     .otherwise(False)
-).withColumn(
-    "feriado",
-    F.when(F.lower(F.col("feriado_ou_promocao")).contains("holiday"), True)
-     .when(F.lower(F.col("feriado_ou_promocao")).contains("feriado"), True)
-     .otherwise(False)
+    "feriado_ou_promocao_ativo",
+    F.col("feriado_ou_promocao").cast("integer") == 1
 )
 
 # COMMAND ----------
@@ -356,15 +361,13 @@ print(f"Registros na Silver: {df_silver.count():,}")
 
 df_dim_produto = (
     df_silver
-    .select("produto_id", "categoria")
+    .select("produto_id")
     .distinct()
-    .orderBy("produto_id")
-    .withColumn("id_produto", F.monotonically_increasing_id().cast(IntegerType()))
+    .withColumn("id_produto", F.row_number().over(Window.orderBy("produto_id")))
     .select(
         F.col("id_produto"),
         F.col("produto_id").alias("produto_id_orig"),
         F.col("produto_id").alias("nome_produto"),
-        F.col("categoria"),
     )
 )
 
@@ -388,15 +391,13 @@ df_dim_produto.display()
 
 df_dim_loja = (
     df_silver
-    .select("loja_id", "regiao")
+    .select("loja_id")
     .distinct()
-    .orderBy("loja_id")
-    .withColumn("id_loja", F.monotonically_increasing_id().cast(IntegerType()))
+    .withColumn("id_loja", F.row_number().over(Window.orderBy("loja_id")))
     .select(
         F.col("id_loja"),
         F.col("loja_id").alias("loja_id_orig"),
         F.col("loja_id").alias("nome_loja"),
-        F.col("regiao"),
     )
 )
 
@@ -420,7 +421,7 @@ df_dim_loja.display()
 
 df_dim_data = (
     df_silver
-    .select("data", "feriado")
+    .select("data")
     .distinct()
     .withColumn("id_data",    F.date_format(F.col("data"), "yyyyMMdd").cast(IntegerType()))
     .withColumn("ano",        F.year(F.col("data")))
@@ -428,7 +429,7 @@ df_dim_data = (
     .withColumn("nome_mes",   F.date_format(F.col("data"), "MMMM"))
     .withColumn("dia_semana", F.dayofweek(F.col("data")))
     .withColumn("trimestre",  F.quarter(F.col("data")))
-    .select("id_data", F.col("data").alias("data_completa"), "ano", "mes", "nome_mes", "dia_semana", "trimestre", "feriado")
+    .select("id_data", F.col("data").alias("data_completa"), "ano", "mes", "nome_mes", "dia_semana", "trimestre")
     .orderBy("id_data")
 )
 
@@ -457,7 +458,7 @@ window_7d = (
     .rowsBetween(-6, 0)
 )
 
-df_com_metricas = (
+df_com_cobertura = (
     df_silver
     .withColumn(
         "demanda_media_7d",
@@ -470,10 +471,15 @@ df_com_metricas = (
             F.round(F.col("nivel_estoque") / F.col("demanda_media_7d"), 2)
         ).otherwise(999.0)
     )
-    .withColumn(
-        "flag_estoque_critico",
-        F.col("dias_cobertura") < 7
-    )
+)
+
+# Limiar adaptativo: percentil 25 da distribuição real de cobertura
+p25_cobertura = df_com_cobertura.approxQuantile("dias_cobertura", [0.25], 0.01)[0]
+print(f"Limiar adaptativo (p25 de dias_cobertura): {p25_cobertura:.2f} dias")
+
+df_com_metricas = df_com_cobertura.withColumn(
+    "flag_estoque_critico",
+    F.col("dias_cobertura") < p25_cobertura
 )
 
 print("=== Distribuição da flag de estoque crítico ===")
@@ -496,9 +502,9 @@ df_fato = (
     .join(df_dim_loja_ref,    df_com_metricas["loja_id"]    == df_dim_loja_ref["loja_id_orig"],       "left")
     .join(df_dim_data_ref,    df_com_metricas["data"]       == df_dim_data_ref["data_completa"],      "left")
     .select(
-        "id_data", "id_produto", "id_loja",
+        "id_data", "id_produto", "id_loja", "categoria", "regiao",
         "unidades_vendidas", "unidades_pedidas", "nivel_estoque",
-        "preco_unitario", "desconto", "em_promocao", "feriado",
+        "preco_unitario", "desconto", "feriado_ou_promocao_ativo",
         "condicao_climatica", "sazonalidade", "previsao_demanda", "preco_concorrente",
         "demanda_media_7d", "dias_cobertura", "flag_estoque_critico",
     )
@@ -532,6 +538,29 @@ print("\n=== Integridade referencial (chaves nulas na fato) ===")
 print(f"  id_produto nulos: {fato_val.filter(F.col('id_produto').isNull()).count()}")
 print(f"  id_loja nulos   : {fato_val.filter(F.col('id_loja').isNull()).count()}")
 print(f"  id_data nulos   : {fato_val.filter(F.col('id_data').isNull()).count()}")
+
+# COMMAND ----------
+
+silver_count = spark.table(f"{CATALOG}.{SCHEMA_SILVER}.{TABLE_SILVER}").count()
+fato_count   = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.fato_estoque_diario").count()
+
+assert fato_count == silver_count, (
+    f"ERRO DE GRANULARIDADE: fato_estoque_diario tem {fato_count:,} linhas "
+    f"mas silver tem {silver_count:,}. Verifique as dimensões."
+)
+print(f"[OK] Validação aprovada: fato = silver = {fato_count:,} registros")
+
+for tabela, chave in [("dim_produto", "id_produto"), ("dim_loja", "id_loja"), ("dim_data", "id_data")]:
+    dim = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.{tabela}")
+    total, distintos = dim.count(), dim.select(chave).distinct().count()
+    assert total == distintos, f"ERRO: {tabela}.{chave} tem {total - distintos} valores repetidos"
+    print(f"[OK] {tabela}.{chave} único ({total} registros)")
+
+# categoria e regiao variam por registro no dataset (o mesmo produto aparece em várias
+# categorias e a mesma loja em várias regiões), por isso ficam na fato e não nas dimensões.
+fato_cols = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.fato_estoque_diario").columns
+assert "categoria" in fato_cols and "regiao" in fato_cols, "ERRO: categoria/regiao ausentes na fato"
+print("[OK] categoria e regiao gravadas na fato (atributos por registro)")
 
 # COMMAND ----------
 
@@ -700,10 +729,12 @@ df_analitico = (
     df_fato_a
     .join(df_produto_a,                "id_produto", "left")
     .join(df_loja_a,                   "id_loja",    "left")
-    .join(df_data_a.drop("feriado"),   "id_data",    "left")
+    .join(df_data_a,                   "id_data",    "left")
 )
 
-print(f"Dataset analítico: {df_analitico.count():,} registros")
+n_analitico = df_analitico.count()
+assert n_analitico == df_fato_a.count(), "ERRO: joins com as dimensões duplicaram linhas da fato"
+print(f"Dataset analítico: {n_analitico:,} registros")
 
 # COMMAND ----------
 
@@ -750,8 +781,9 @@ print(df_p1_cat.to_string(index=False))
 
 df_p1_prod = (
     df_analitico
-    .groupBy("produto_id_orig", "categoria")
+    .groupBy("produto_id_orig")
     .agg(
+        F.first("categoria", ignorenulls=True).alias("categoria"),
         F.count("*").alias("total_dias"),
         F.sum(F.col("flag_estoque_critico").cast("int")).alias("dias_criticos")
     )
@@ -796,7 +828,7 @@ axes[0].set_title("Taxa de estoque crítico por loja")
 axes[0].set_xlabel("% dias críticos")
 axes[0].xaxis.set_major_formatter(mtick.PercentFormatter())
 
-df_p1_reg = df_p1_loja.groupby("regiao")["pct_critico"].mean().reset_index().sort_values("pct_critico", ascending=False)
+df_p1_reg = df_analitico.groupBy("regiao").agg(F.round(F.avg(F.col("flag_estoque_critico").cast("int")) * 100, 1).alias("pct_critico")).orderBy(F.col("pct_critico").desc()).toPandas()
 axes[1].bar(df_p1_reg["regiao"], df_p1_reg["pct_critico"], color=sns.color_palette("muted"))
 axes[1].set_title("Taxa média de estoque crítico por região")
 axes[1].set_ylabel("% dias críticos (média)")
@@ -882,7 +914,7 @@ plt.show()
 
 df_p3 = (
     df_analitico
-    .groupBy("em_promocao")
+    .groupBy("feriado_ou_promocao_ativo")
     .agg(
         F.count("*").alias("total_registros"),
         F.sum(F.col("flag_estoque_critico").cast("int")).alias("dias_criticos"),
@@ -890,7 +922,7 @@ df_p3 = (
         F.round(F.avg("nivel_estoque"), 2).alias("estoque_medio")
     )
     .withColumn("taxa_critico", F.round(F.col("dias_criticos") * 100 / F.col("total_registros"), 1))
-    .withColumn("rotulo", F.when(F.col("em_promocao"), "Com promoção").otherwise("Sem promoção"))
+    .withColumn("rotulo", F.when(F.col("feriado_ou_promocao_ativo"), "Feriado/Promoção ativo").otherwise("Sem feriado/promoção"))
 ).toPandas()
 
 print(df_p3[["rotulo", "total_registros", "dias_criticos", "taxa_critico", "vendas_medias", "estoque_medio"]].to_string(index=False))
@@ -965,14 +997,14 @@ plt.show()
 
 df_p4_feriado = (
     df_analitico
-    .groupBy("feriado")
+    .groupBy("feriado_ou_promocao_ativo")
     .agg(
         F.count("*").alias("total"),
         F.sum(F.col("flag_estoque_critico").cast("int")).alias("criticos"),
         F.round(F.avg("unidades_vendidas"), 2).alias("vendas_medias")
     )
     .withColumn("taxa", F.round(F.col("criticos") * 100 / F.col("total"), 1))
-    .withColumn("rotulo", F.when(F.col("feriado"), "Feriado").otherwise("Dia normal"))
+    .withColumn("rotulo", F.when(F.col("feriado_ou_promocao_ativo"), "Feriado/Promoção ativo").otherwise("Dia normal"))
 ).toPandas()
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 5))
@@ -991,7 +1023,7 @@ axes[1].set_ylabel("Unidades vendidas (média)")
 for i, v in enumerate(df_p4_feriado["vendas_medias"]):
     axes[1].text(i, v + 0.1, f"{v}", ha="center", fontweight="bold")
 
-plt.suptitle("P4: Feriados vs dias normais", fontsize=13, fontweight="bold")
+plt.suptitle("P4: Dias com evento (feriado/promoção) vs dias normais", fontsize=13, fontweight="bold")
 plt.tight_layout()
 plt.show()
 

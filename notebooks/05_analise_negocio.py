@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # Notebook 05: Análise de Negócio
 # MAGIC **Pipeline:** Retail Store Inventory | Risco de Ruptura de Estoque
@@ -10,6 +14,10 @@
 
 # MAGIC %md
 # MAGIC ## 1. Configuração
+
+# COMMAND ----------
+
+# MAGIC %pip install seaborn -q
 
 # COMMAND ----------
 
@@ -32,10 +40,15 @@ df_analitico = (
     df_fato
     .join(df_produto,             "id_produto", "left")
     .join(df_loja,                "id_loja",    "left")
-    .join(df_data.drop("feriado"), "id_data",   "left")
+    .join(df_data,                 "id_data",   "left")
 )
 
-print(f"Dataset analítico: {df_analitico.count():,} registros")
+n_analitico = df_analitico.count()
+assert n_analitico == df_fato.count(), (
+    f"ERRO: joins com as dimensões duplicaram linhas da fato "
+    f"({n_analitico:,} vs {df_fato.count():,})"
+)
+print(f"Dataset analítico: {n_analitico:,} registros")
 
 # Estilo dos gráficos
 sns.set_theme(style="whitegrid")
@@ -95,8 +108,9 @@ print(df_p1_cat.to_string(index=False))
 
 df_p1_prod = (
     df_analitico
-    .groupBy("produto_id_orig", "categoria")
+    .groupBy("produto_id_orig")
     .agg(
+        F.first("categoria", ignorenulls=True).alias("categoria"),
         F.count("*").alias("total_dias"),
         F.sum(F.col("flag_estoque_critico").cast("int")).alias("dias_criticos")
     )
@@ -152,7 +166,7 @@ axes[0].set_xlabel("% dias críticos")
 axes[0].xaxis.set_major_formatter(mtick.PercentFormatter())
 
 # Por região
-df_p1_reg = df_p1_loja.groupby("regiao")["pct_critico"].mean().reset_index().sort_values("pct_critico", ascending=False)
+df_p1_reg = df_analitico.groupBy("regiao").agg(F.round(F.avg(F.col("flag_estoque_critico").cast("int")) * 100, 1).alias("pct_critico")).orderBy(F.col("pct_critico").desc()).toPandas()
 axes[1].bar(df_p1_reg["regiao"], df_p1_reg["pct_critico"], color=sns.color_palette("muted"))
 axes[1].set_title("Taxa média de estoque crítico por região")
 axes[1].set_ylabel("% dias críticos (média)")
@@ -245,13 +259,17 @@ plt.show()
 
 # MAGIC %md
 # MAGIC ---
-# MAGIC ## Pergunta 3: Promoções geram maior pressão sobre o estoque?
+# MAGIC ## Pergunta 3: Dias com feriado/promoção ativo geram maior pressão sobre o estoque?
+# MAGIC
+# MAGIC > **Nota metodológica:** a coluna original `feriado_ou_promocao` é um inteiro binário (0/1)
+# MAGIC > que não distingue feriado de promoção. A análise usa o indicador unificado
+# MAGIC > `feriado_ou_promocao_ativo`, comparando dias com evento (=1) versus dias sem evento (=0).
 
 # COMMAND ----------
 
 df_p3 = (
     df_analitico
-    .groupBy("em_promocao")
+    .groupBy("feriado_ou_promocao_ativo")
     .agg(
         F.count("*").alias("total_registros"),
         F.sum(F.col("flag_estoque_critico").cast("int")).alias("dias_criticos"),
@@ -259,7 +277,7 @@ df_p3 = (
         F.round(F.avg("nivel_estoque"), 2).alias("estoque_medio")
     )
     .withColumn("taxa_critico", F.round(F.col("dias_criticos") * 100 / F.col("total_registros"), 1))
-    .withColumn("rotulo", F.when(F.col("em_promocao"), "Com promoção").otherwise("Sem promoção"))
+    .withColumn("rotulo", F.when(F.col("feriado_ou_promocao_ativo"), "Feriado/Promoção ativo").otherwise("Sem feriado/promoção"))
 ).toPandas()
 
 print(df_p3[["rotulo", "total_registros", "dias_criticos", "taxa_critico", "vendas_medias", "estoque_medio"]].to_string(index=False))
@@ -275,7 +293,7 @@ for ax, col, titulo in zip(axes,
     for bar, val in zip(bars, df_p3[col]):
         ax.text(bar.get_x() + bar.get_width() / 2, val + 0.3, f"{val}", ha="center", fontweight="bold")
 
-plt.suptitle("P3: Impacto das promoções no estoque", fontsize=13, fontweight="bold")
+plt.suptitle("P3: Dias com feriado/promoção ativo vs sem evento", fontsize=13, fontweight="bold")
 plt.tight_layout()
 plt.show()
 
@@ -337,20 +355,20 @@ plt.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### P4.2: Feriados vs dias normais
+# MAGIC ### P4.2: Dias com evento (feriado/promoção) vs dias normais
 
 # COMMAND ----------
 
 df_p4_feriado = (
     df_analitico
-    .groupBy("feriado")
+    .groupBy("feriado_ou_promocao_ativo")
     .agg(
         F.count("*").alias("total"),
         F.sum(F.col("flag_estoque_critico").cast("int")).alias("criticos"),
         F.round(F.avg("unidades_vendidas"), 2).alias("vendas_medias")
     )
     .withColumn("taxa", F.round(F.col("criticos") * 100 / F.col("total"), 1))
-    .withColumn("rotulo", F.when(F.col("feriado"), "Feriado").otherwise("Dia normal"))
+    .withColumn("rotulo", F.when(F.col("feriado_ou_promocao_ativo"), "Feriado/Promoção ativo").otherwise("Dia normal"))
 ).toPandas()
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 5))
@@ -369,7 +387,7 @@ axes[1].set_ylabel("Unidades vendidas (média)")
 for i, v in enumerate(df_p4_feriado["vendas_medias"]):
     axes[1].text(i, v + 0.1, f"{v}", ha="center", fontweight="bold")
 
-plt.suptitle("P4: Feriados vs dias normais", fontsize=13, fontweight="bold")
+plt.suptitle("P4: Dias com evento (feriado/promoção) vs dias normais", fontsize=13, fontweight="bold")
 plt.tight_layout()
 plt.show()
 
@@ -378,10 +396,12 @@ print(df_p4_feriado[["rotulo", "total", "criticos", "taxa", "vendas_medias"]].to
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC Se feriados concentram mais dias críticos do que dias normais, o aumento de demanda nesses
-# MAGIC dias não está sendo compensado por reforço no estoque. Vendas médias mais altas em feriados
-# MAGIC com estoque médio menor confirmam que o desabastecimento ocorre exatamente quando a pressão
-# MAGIC sobre o produto é maior — o pior cenário possível para a experiência do consumidor.
+# MAGIC Se dias com evento (feriado ou promoção) concentram mais dias críticos do que dias normais,
+# MAGIC o aumento de demanda nesses períodos não está sendo compensado por reforço no estoque.
+# MAGIC Vendas médias mais altas combinadas com maior taxa crítica nos dias com evento confirmam
+# MAGIC que o desabastecimento ocorre exatamente quando a pressão sobre o produto é maior.
+# MAGIC **Limitação:** como a coluna original não distingue feriado de promoção, a análise
+# MAGIC captura o efeito combinado — suficiente para identificar o padrão de risco.
 
 # COMMAND ----------
 

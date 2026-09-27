@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # Notebook 01: Ingestão Bronze
 # MAGIC **Pipeline:** Retail Store Inventory | Risco de Ruptura de Estoque
