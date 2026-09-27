@@ -146,81 +146,150 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 <details>
 <summary><strong>Catálogo de Dados — bronze.inventory_raw</strong></summary>
 
-73.100 registros. Dados ingeridos com colunas renomeadas para snake_case e metadados de controle adicionados.
+73.100 registros. Dado bruto preservado exatamente como veio da fonte. Colunas renomeadas para snake_case (necessário para compatibilidade com Delta Lake) e dois metadados de controle adicionados.
 
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| store_id | String | Identificador da loja |
-| product_id | String | Identificador do produto |
-| category | String | Categoria do produto |
-| region | String | Região geográfica da loja |
-| date | String | Data do registro |
-| inventory_level | Integer | Nível de estoque disponível |
-| units_sold | Integer | Unidades vendidas no dia |
-| units_ordered | Integer | Unidades pedidas/repostas no dia |
-| demand_forecast | Double | Previsão de demanda |
-| price | Double | Preço unitário do produto |
-| discount | Double | Desconto aplicado |
-| weather_condition | String | Condição climática do dia |
-| holiday_promotion | String | Indicador de feriado ou promoção |
-| competitor_pricing | Double | Preço do concorrente |
-| seasonality | String | Estação do ano |
-| ingestion_date | Timestamp | Data/hora da ingestão (metadado) |
-| source_table | String | Tabela de origem no Unity Catalog (metadado) |
+| Coluna | Tipo | Domínio | Descrição |
+|---|---|---|---|
+| store_id | String | "S001" – "S020" (20 lojas) | Identificador da loja |
+| product_id | String | "P001" – "P100" (100 produtos) | Identificador do produto |
+| category | String | Texto livre — valores brutos da fonte | Categoria do produto |
+| region | String | Texto livre — valores brutos da fonte | Região geográfica da loja |
+| date | String | Formato "YYYY-MM-DD" | Data do registro |
+| inventory_level | Integer | Sem restrição — dado bruto | Nível de estoque disponível |
+| units_sold | Integer | Sem restrição — dado bruto | Unidades vendidas no dia |
+| units_ordered | Integer | Sem restrição — dado bruto | Unidades pedidas/repostas no dia |
+| demand_forecast | Double | Sem restrição — dado bruto | Previsão de demanda |
+| price | Double | Sem restrição — dado bruto | Preço unitário do produto |
+| discount | Double | Sem restrição — dado bruto | Desconto aplicado |
+| weather_condition | String | Texto livre — valores brutos da fonte | Condição climática do dia |
+| holiday_promotion | String | Texto livre — combinação feriado/promoção | Indicador de feriado ou promoção |
+| competitor_pricing | Double | Sem restrição — dado bruto | Preço do concorrente |
+| seasonality | String | Texto livre — valores brutos da fonte | Estação do ano |
+| ingestion_date | Timestamp | Data/hora da execução do pipeline | Data/hora da ingestão (metadado) |
+| source_table | String | Sempre "workspace.default.retail_store_inventory" | Tabela de origem no Unity Catalog (metadado) |
 
 </details>
 
 <details>
 <summary><strong>Catálogo de Dados — silver.inventory_clean</strong></summary>
 
-73.100 registros. Dados limpos e padronizados com nomes de colunas em português.
+73.100 registros. Dados limpos, tipados e padronizados. Nomes de colunas em português. Registros com valores impossíveis e nulos em colunas essenciais foram removidos; nulos em colunas secundárias foram substituídos por valores padrão.
 
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| loja_id | String | Identificador da loja |
-| produto_id | String | Identificador do produto |
-| categoria | String | Categoria (padronizada em uppercase) |
-| regiao | String | Região (padronizada em uppercase) |
-| data | Date | Data do registro |
-| nivel_estoque | Integer | Estoque disponível no dia |
-| unidades_vendidas | Integer | Unidades vendidas no dia |
-| unidades_pedidas | Integer | Unidades repostas no dia |
-| previsao_demanda | Double | Previsão de demanda |
-| preco_unitario | Double | Preço unitário |
-| desconto | Double | Desconto aplicado |
-| condicao_climatica | String | Condição climática |
-| em_promocao | Boolean | Se havia promoção ativa no dia |
-| feriado | Boolean | Se era feriado |
-| preco_concorrente | Double | Preço do concorrente |
-| sazonalidade | String | Estação do ano |
+| Coluna | Tipo | Domínio | Descrição |
+|---|---|---|---|
+| loja_id | String | "S001" – "S020" (20 lojas únicas) | Identificador da loja |
+| produto_id | String | "P001" – "P100" (100 produtos únicos) | Identificador do produto |
+| categoria | String | Uppercase; 5 categorias únicas (Electronics, Clothing, Groceries, Furniture, Toys) | Categoria do produto |
+| regiao | String | Uppercase; 4 regiões únicas (North, South, East, West) | Região geográfica da loja |
+| data | Date | Período do dataset — mín./máx. verificados em `04_qualidade_dados` | Data do registro |
+| nivel_estoque | Integer | ≥ 0 (registros com valor negativo removidos) | Estoque disponível no dia |
+| unidades_vendidas | Integer | ≥ 0 (registros com valor negativo removidos) | Unidades vendidas no dia |
+| unidades_pedidas | Integer | ≥ 0 | Unidades pedidas/repostas no dia |
+| previsao_demanda | Double | ≥ 0 (nulos substituídos por 0) | Previsão de demanda para o dia |
+| preco_unitario | Double | > 0 (registros com preço ≤ 0 removidos) | Preço unitário do produto |
+| desconto | Double | ≥ 0 (nulos substituídos por 0) | Desconto aplicado no dia |
+| condicao_climatica | String | Sunny, Rainy, Cloudy, Snowy, "NAO_INFORMADO" (para nulos) | Condição climática do dia |
+| feriado_ou_promocao | Integer | Valor bruto da fonte — base para derivar `em_promocao` e `feriado` | Indicador combinado original de feriado ou promoção (coluna original preservada) |
+| em_promocao | Boolean | True / False | Se havia promoção ativa no dia (derivado de `feriado_ou_promocao`) |
+| feriado | Boolean | True / False | Se o dia era feriado |
+| preco_concorrente | Double | ≥ 0 (nulos substituídos por 0) | Preço praticado pelo concorrente |
+| sazonalidade | String | Uppercase; Spring, Summer, Fall, Winter | Estação do ano |
 
 </details>
 
 <details>
 <summary><strong>Catálogo de Dados — gold (dimensões e fato)</strong></summary>
 
-| Tabela | Registros |
-|---|---|
-| `dim_produto` | 100 |
-| `dim_loja` | 20 |
-| `dim_data` | 731 |
-| `fato_estoque_diario` | 1.462.000 |
+Camada analítica no formato de Esquema Estrela. Tabelas gravadas em formato Delta Lake no schema `workspace.gold`.
 
-**gold.fato_estoque_diario** — colunas principais:
+| Tabela | Tipo | Registros |
+|---|---|---|
+| `dim_produto` | Dimensão | 100 |
+| `dim_loja` | Dimensão | 20 |
+| `dim_data` | Dimensão | 731 |
+| `fato_estoque_diario` | Fato | ~73.100 |
 
-| Coluna | Tipo | Descrição | Linhagem |
-|---|---|---|---|
-| id_data | Integer | FK → dim_data | Silver: data |
-| id_produto | Integer | FK → dim_produto | Silver: produto_id |
-| id_loja | Integer | FK → dim_loja | Silver: loja_id |
-| nivel_estoque | Integer | Estoque disponível | Silver: nivel_estoque |
-| unidades_vendidas | Integer | Quantidade vendida | Silver: unidades_vendidas |
-| preco_unitario | Double | Preço do produto | Silver: preco_unitario |
-| em_promocao | Boolean | Se havia promoção | Silver: em_promocao |
-| feriado | Boolean | Se era feriado | Silver: feriado |
-| demanda_media_7d | Double | Média móvel 7d de vendas | **Calculado** via window function |
-| dias_cobertura | Double | nivel_estoque / demanda_media_7d | **Calculado** |
-| flag_estoque_critico | Boolean | Risco de ruptura | **Calculado**: dias_cobertura < 7 |
+---
+
+**gold.dim_produto**
+
+| Coluna | Tipo | Domínio | Descrição | Linhagem |
+|---|---|---|---|---|
+| id_produto | Integer | ≥ 0 (chave surrogate auto-gerada) | Chave primária (PK) | Gerado: `monotonically_increasing_id()` |
+| produto_id_orig | String | "P001" – "P100" | Código original do produto | Silver: produto_id |
+| nome_produto | String | "P001" – "P100" | Nome do produto (igual ao código neste dataset) | Silver: produto_id |
+| categoria | String | Electronics, Clothing, Groceries, Furniture, Toys | Categoria do produto | Silver: categoria |
+
+---
+
+**gold.dim_loja**
+
+| Coluna | Tipo | Domínio | Descrição | Linhagem |
+|---|---|---|---|---|
+| id_loja | Integer | ≥ 0 (chave surrogate auto-gerada) | Chave primária (PK) | Gerado: `monotonically_increasing_id()` |
+| loja_id_orig | String | "S001" – "S020" | Código original da loja | Silver: loja_id |
+| nome_loja | String | "S001" – "S020" | Nome da loja (igual ao código neste dataset) | Silver: loja_id |
+| regiao | String | North, South, East, West | Região geográfica da loja | Silver: regiao |
+
+---
+
+**gold.dim_data**
+
+| Coluna | Tipo | Domínio | Descrição | Linhagem |
+|---|---|---|---|---|
+| id_data | Integer | Formato yyyyMMdd (ex: 20230101) | Chave primária (PK) | Gerado: `date_format(data, "yyyyMMdd")` |
+| data_completa | Date | Período do dataset | Data completa | Silver: data |
+| ano | Integer | Anos presentes no dataset | Ano | Extraído de data_completa |
+| mes | Integer | 1 – 12 | Número do mês | Extraído de data_completa |
+| nome_mes | String | January – December | Nome do mês por extenso | Extraído de data_completa |
+| dia_semana | Integer | 1 (domingo) – 7 (sábado) | Dia da semana (padrão Spark) | Extraído de data_completa |
+| trimestre | Integer | 1 – 4 | Trimestre do ano | Extraído de data_completa |
+| feriado | Boolean | True / False | Se o dia era feriado | Silver: feriado |
+
+---
+
+**gold.fato_estoque_diario**
+
+| Coluna | Tipo | Domínio | Descrição | Linhagem |
+|---|---|---|---|---|
+| id_data | Integer | Formato yyyyMMdd (FK → dim_data) | Referência à dimensão data | Silver: data |
+| id_produto | Integer | ≥ 0 (FK → dim_produto) | Referência à dimensão produto | Silver: produto_id |
+| id_loja | Integer | ≥ 0 (FK → dim_loja) | Referência à dimensão loja | Silver: loja_id |
+| nivel_estoque | Integer | ≥ 0 | Estoque disponível no dia | Silver: nivel_estoque |
+| unidades_vendidas | Integer | ≥ 0 | Quantidade vendida no dia | Silver: unidades_vendidas |
+| unidades_pedidas | Integer | ≥ 0 | Quantidade pedida/reposta no dia | Silver: unidades_pedidas |
+| preco_unitario | Double | > 0 | Preço unitário do produto | Silver: preco_unitario |
+| desconto | Double | ≥ 0 | Desconto aplicado no dia | Silver: desconto |
+| em_promocao | Boolean | True / False | Se havia promoção ativa | Silver: em_promocao |
+| feriado | Boolean | True / False | Se o dia era feriado | Silver: feriado |
+| condicao_climatica | String | Sunny, Rainy, Cloudy, Snowy, "NAO_INFORMADO" | Condição climática | Silver: condicao_climatica |
+| sazonalidade | String | Spring, Summer, Fall, Winter | Estação do ano | Silver: sazonalidade |
+| previsao_demanda | Double | ≥ 0 | Previsão de demanda para o dia | Silver: previsao_demanda |
+| preco_concorrente | Double | ≥ 0 | Preço praticado pelo concorrente | Silver: preco_concorrente |
+| demanda_media_7d | Double | ≥ 0 | Média móvel de 7 dias de `unidades_vendidas` por produto+loja | **Calculado**: `avg(unidades_vendidas)` com window de 7 dias |
+| dias_cobertura | Double | 0 a 999 (999 indica produto sem demanda registrada) | Dias até esgotamento do estoque | **Calculado**: `nivel_estoque / demanda_media_7d` |
+| flag_estoque_critico | Boolean | True quando dias_cobertura < 7; False caso contrário | Indicador de risco de ruptura | **Calculado**: `dias_cobertura < 7` |
+
+</details>
+
+<details>
+<summary><strong>Evidências no Unity Catalog (Databricks)</strong></summary>
+
+As tabelas foram criadas e registradas no Unity Catalog do Databricks Free Edition sob o catálogo `workspace`. As capturas de tela abaixo evidenciam a estrutura de schemas e colunas registradas na plataforma.
+
+**Schema Bronze — `workspace.bronze` → tabela `inventory_raw`**
+
+![Unity Catalog - Bronze (colunas 1/2)](images/uc_bronze.png)
+![Unity Catalog - Bronze (colunas 2/2)](images/uc_bronze_2.png)
+
+**Schema Silver — `workspace.silver` → tabela `inventory_clean`**
+
+![Unity Catalog - Silver (colunas 1/2)](images/uc_silver.png)
+![Unity Catalog - Silver (colunas 2/2)](images/uc_silver_2.png)
+
+**Schema Gold — `workspace.gold` → tabelas `dim_produto`, `dim_loja`, `dim_data`, `fato_estoque_diario`**
+
+![Unity Catalog - Gold](images/uc_gold.png)
 
 </details>
 
@@ -263,6 +332,26 @@ O pipeline foi organizado em notebooks separados por camada, seguindo a Arquitet
 | `demanda_media_7d` | Média móvel de 7 dias de `unidades_vendidas` por produto+loja | PySpark Window Function |
 | `dias_cobertura` | `nivel_estoque / demanda_media_7d` | PySpark |
 | `flag_estoque_critico` | `dias_cobertura < 7` | PySpark |
+
+</details>
+
+<details>
+<summary><strong>Evidências de persistência das tabelas na plataforma de nuvem</strong></summary>
+
+As tabelas foram gravadas no formato **Delta Lake** dentro do Unity Catalog do **Databricks Free Edition**, conforme confirmado pelos outputs de execução dos notebooks. O arquivo [`pipeline_completo.html`](pipeline_completo.html) contém o log completo de execução de todas as etapas, incluindo as mensagens de confirmação de gravação de cada tabela:
+
+```
+Tabela workspace.bronze.inventory_raw gravada com 73.100 registros.
+Tabela workspace.silver.inventory_clean gravada com 73.100 registros.
+dim_produto: 100 registros
+dim_loja: 20 registros
+dim_data: 731 registros
+fato_estoque_diario: 73.100 registros
+```
+
+A captura de tela abaixo mostra o Unity Catalog do Databricks com os três schemas (`bronze`, `silver`, `gold`) e suas tabelas persistidas:
+
+![Tabelas persistidas no Databricks — schemas Bronze, Silver e Gold](images/tabelas_databricks.png)
 
 </details>
 
@@ -338,7 +427,7 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 - [x] Pipeline completo Bronze → Silver → Gold implementado em notebooks separados por camada
 - [x] Regra de negócio para estoque crítico definida, documentada e justificada (`dias_cobertura < 7`)
 - [x] Esquema Estrela com tabela fato (`fato_estoque_diario`) e 3 dimensões (`dim_produto`, `dim_loja`, `dim_data`)
-- [x] Catálogo de dados completo com tipos, descrições e linhagem
+- [x] Catálogo de dados completo com tipos, descrições, domínio de valores e linhagem para todas as camadas (Bronze, Silver, Gold)
 - [x] Verificação de qualidade em 5 dimensões: completude, unicidade, consistência, acurácia e outliers
 - [x] 5 perguntas de negócio respondidas com análises e visualizações em Python
 
@@ -347,7 +436,6 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 <details>
 <summary><strong>Limitações e dificuldades</strong></summary>
 
-- **Catálogo no Unity Catalog:** as descrições foram documentadas no README, mas não preenchidas diretamente na interface do Unity Catalog por limitação de tempo.
 - **P5 (Preço x Ruptura):** dataset sintético com baixa variação de preços limita o poder analítico.
 - **Compatibilidade com Delta Lake:** colunas com espaços nos nomes causaram erro `DELTA_INVALID_CHARACTERS_IN_COLUMN_NAMES` — resolvido renomeando todas para snake_case.
 - **Window function com DATE:** `.cast("long")` em coluna `DATE` não é suportado na versão do Spark utilizada — resolvido com `.orderBy("data")`.
