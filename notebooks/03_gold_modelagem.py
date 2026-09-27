@@ -272,10 +272,10 @@ print(f"  id_data nulos   : {fato.filter(F.col('id_data').isNull()).count()}")
 # MAGIC
 # MAGIC | Tabela | Tipo | Registros |
 # MAGIC |---|---|---|
-# MAGIC | `gold.dim_produto` | Dimensão | N produtos únicos |
-# MAGIC | `gold.dim_loja` | Dimensão | N lojas únicas |
-# MAGIC | `gold.dim_data` | Dimensão | N datas únicas |
-# MAGIC | `gold.fato_estoque_diario` | Fato | ~73k registros |
+# MAGIC | `gold.dim_produto` | Dimensão | 20 produtos únicos (lean — sem categoria) |
+# MAGIC | `gold.dim_loja` | Dimensão | 5 lojas únicas (lean — sem regiao) |
+# MAGIC | `gold.dim_data` | Dimensão | 731 datas únicas |
+# MAGIC | `gold.fato_estoque_diario` | Fato | 73.100 registros (inclui categoria e regiao) |
 # MAGIC
 # MAGIC ### Regra de ruptura aplicada
 # MAGIC - `demanda_media_7d` = média móvel de 7 dias de `unidades_vendidas` por produto+loja
