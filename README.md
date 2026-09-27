@@ -16,18 +16,18 @@
 
 ## Sumário
 
-- [1. Contexto de Negócios e Perguntas](#1-contexto-de-negócios-e-perguntas)
-- [2. Carga dos Dados](#2-carga-dos-dados)
-- [3. Modelagem e Catálogo de Dados](#3-modelagem-e-catálogo-de-dados)
-- [4. Pipeline de Dados / ETL](#4-pipeline-de-dados--etl)
-- [5. Qualidade de Dados](#5-qualidade-de-dados)
-- [6. Análise de Dados](#6-análise-de-dados)
-- [7. Autoavaliação](#7-autoavaliação)
+- [Contexto de Negócios e Perguntas (Etapa 2 e 4.1)](#contexto-de-negócios-e-perguntas-etapa-2-e-41)
+- [Carga dos Dados (Etapa 4.2)](#carga-dos-dados-etapa-42)
+- [Modelagem e Catálogo de Dados (Etapa 4.3)](#modelagem-e-catálogo-de-dados-etapa-43)
+- [Pipeline de Dados (Etapa 4.4)](#pipeline-de-dados-etapa-44)
+- [Qualidade de Dados (Etapa 4.5)](#qualidade-de-dados-etapa-45)
+- [Análise de Dados (Etapa 4.5)](#análise-de-dados-etapa-45)
+- [Autoavaliação](#7-autoavaliação)
 - [Tecnologias](#tecnologias)
 
 ---
 
-## 1. Contexto de Negócios e Perguntas
+## Contexto de Negócios e Perguntas (Etapa 2 e 4.1)
 
 Uma empresa varejista precisa garantir a disponibilidade dos produtos para atender à demanda dos consumidores. A ocorrência de níveis insuficientes de estoque pode resultar em **ruptura**, perda potencial de vendas e pior experiência para o consumidor. Ao mesmo tempo, manter estoques excessivamente elevados aumenta custos e capital imobilizado.
 
@@ -37,10 +37,11 @@ O objetivo deste projeto é construir um pipeline de dados capaz de organizar e 
 <summary><strong>Dataset</strong></summary>
 
 - **Nome:** Retail Store Inventory Forecasting Dataset
-- **Fonte:** Kaggle (Anirudh Chauhan)
-- **Licença:** CC0 (Public Domain)
-- **Volume:** ~73.000 registros diários
-- **Conteúdo:** Informações de lojas, produtos, vendas, níveis de estoque, preços, promoções, feriados e condições climáticas
+- **Fonte:** [Kaggle — Anirudh Chauhan](https://www.kaggle.com/datasets/anirudhchauhan/retail-store-inventory-forecasting-dataset)
+- **Licença:** CC0 (Public Domain) — uso livre, sem necessidade de atribuição
+- **Volume:** 73.100 registros diários | **Período:** 2022-01-01 a 2024-01-01
+- **Natureza:** dataset **sintético** — valores gerados artificialmente para fins de previsão de demanda; diferenças entre dimensões tendem a ser pequenas
+- **Conteúdo:** 5 lojas (S001–S005), 20 produtos (P0001–P0020), vendas, níveis de estoque, preços, promoções, feriados e condições climáticas
 
 </details>
 
@@ -72,7 +73,7 @@ O dataset não possui uma coluna explícita de ruptura. Foi criada a seguinte re
 
 ---
 
-## 2. Carga dos Dados
+## Carga dos Dados (Etapa 4.2)
 
 > Notebook: [`notebooks/01_bronze_ingestao.py`](notebooks/01_bronze_ingestao.py)
 
@@ -90,9 +91,22 @@ O dataset está disponível como tabela Delta gerenciada no Unity Catalog do Dat
 
 </details>
 
+<details>
+<summary><strong>Evidências da tabela de origem no Unity Catalog</strong></summary>
+
+**Tabela de origem — `workspace.default.retail_store_inventory` (colunas originais)**
+
+![Tabela de origem - colunas](images/uc_origem.png)
+
+**Detalhes da tabela — tipo Managed, formato Delta, criada em 30/08/2026**
+
+![Tabela de origem - detalhes](images/uc_origem_detalhes.png)
+
+</details>
+
 ---
 
-## 3. Modelagem e Catálogo de Dados
+## Modelagem e Catálogo de Dados (Etapa 4.3)
 
 > Notebook: [`notebooks/03_gold_modelagem.py`](notebooks/03_gold_modelagem.py)
 
@@ -130,14 +144,21 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 | id_produto (PK)|<---| id_produto (FK)              |    | id_loja (PK) |
 | produto_id_orig|    | id_loja    (FK) ------------>|--->| loja_id_orig |
 | nome_produto   |    | id_data    (FK)              |    | nome_loja    |
-| categoria      |    | unidades_vendidas            |    | regiao       |
-+----------------+    | nivel_estoque                |    +--------------+
++----------------+    | categoria  (*)               |    +--------------+
+                      | regiao     (*)               |
+                      | unidades_vendidas            |
+                      | nivel_estoque                |
                       | preco_unitario               |
                       | feriado_ou_promocao_ativo    |
                       | demanda_media_7d  (calculado)|
                       | dias_cobertura    (calculado)|
                       | flag_estoque_critico (calc.) |
                       +------------------------------+
+
+(*) No dataset, o mesmo produto aparece com categorias diferentes
+    e a mesma loja com regiões diferentes por registro. Por isso,
+    categoria e regiao são atributos da fato (variam por linha),
+    não das dimensões.
 ```
 
 </details>
@@ -178,20 +199,20 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 |---|---|---|---|---|
 | loja_id | String | "S001" – "S005" (5 lojas únicas) | Identificador da loja | Bronze: `store_id` — renomeado para português |
 | produto_id | String | "P0001" – "P0020" (20 produtos únicos) | Identificador do produto | Bronze: `product_id` — renomeado para português |
-| categoria | String | Uppercase; 5 categorias únicas (Electronics, Clothing, Groceries, Furniture, Toys) | Categoria do produto | Bronze: `category` — padronizado para uppercase |
-| regiao | String | Uppercase; 4 regiões únicas (North, South, East, West) | Região geográfica da loja | Bronze: `region` — padronizado para uppercase |
+| categoria | String | CLOTHING, ELECTRONICS, FURNITURE, GROCERIES, TOYS | Categoria do produto (uppercase) | Bronze: `category` — padronizado para uppercase via `F.upper()` |
+| regiao | String | EAST, NORTH, SOUTH, WEST | Região geográfica da loja (uppercase) | Bronze: `region` — padronizado para uppercase via `F.upper()` |
 | data | Date | Período do dataset — mín./máx. verificados em `04_qualidade_dados` | Data do registro | Bronze: `date` — convertido de String para DateType |
 | nivel_estoque | Integer | ≥ 0 (registros com valor negativo removidos) | Estoque disponível no dia | Bronze: `inventory_level` — convertido para IntegerType |
 | unidades_vendidas | Integer | ≥ 0 (registros com valor negativo removidos) | Unidades vendidas no dia | Bronze: `units_sold` — convertido para IntegerType |
 | unidades_pedidas | Integer | ≥ 0 | Unidades pedidas/repostas no dia | Bronze: `units_ordered` — convertido para IntegerType |
-| previsao_demanda | Double | ≥ 0 (nulos substituídos por 0) | Previsão de demanda para o dia | Bronze: `demand_forecast` — convertido para DoubleType; nulos → 0 |
+| previsao_demanda | Double | −9,99 a ~518 (dataset sintético; nulos → 0; valores negativos mantidos — ver Qualidade) | Previsão de demanda para o dia | Bronze: `demand_forecast` — convertido para DoubleType; nulos → 0 |
 | preco_unitario | Double | > 0 (registros com preço ≤ 0 removidos) | Preço unitário do produto | Bronze: `price` — convertido para DoubleType |
 | desconto | Double | ≥ 0 (nulos substituídos por 0) | Desconto aplicado no dia | Bronze: `discount` — convertido para DoubleType; nulos → 0 |
 | condicao_climatica | String | Sunny, Rainy, Cloudy, Snowy, "NAO_INFORMADO" (para nulos) | Condição climática do dia | Bronze: `weather_condition` — nulos → "NAO_INFORMADO" |
 | feriado_ou_promocao | Integer | 0 ou 1 — não distingue feriado de promoção | Indicador combinado original (coluna original preservada) | Bronze: `holiday_promotion` — convertido para Integer |
 | feriado_ou_promocao_ativo | Boolean | True / False | Se havia feriado ou promoção no dia | **Calculado**: `feriado_ou_promocao.cast("integer") == 1` |
 | preco_concorrente | Double | ≥ 0 (nulos substituídos por 0) | Preço praticado pelo concorrente | Bronze: `competitor_pricing` — convertido para DoubleType; nulos → 0 |
-| sazonalidade | String | Uppercase; Spring, Summer, Fall, Winter | Estação do ano | Bronze: `seasonality` — padronizado para uppercase |
+| sazonalidade | String | AUTUMN, SPRING, SUMMER, WINTER | Estação do ano (uppercase) | Bronze: `seasonality` — padronizado para uppercase via `F.upper()` |
 
 </details>
 
@@ -209,25 +230,23 @@ Camada analítica no formato de Esquema Estrela. Tabelas gravadas em formato Del
 
 ---
 
-**gold.dim_produto**
+**gold.dim_produto** *(dimensão lean — categoria fica na fato pois varia por registro)*
 
 | Coluna | Tipo | Domínio | Descrição | Linhagem |
 |---|---|---|---|---|
-| id_produto | Integer | ≥ 0 (chave surrogate auto-gerada) | Chave primária (PK) | Gerado: `monotonically_increasing_id()` |
-| produto_id_orig | String | "P001" – "P100" | Código original do produto | Silver: produto_id |
-| nome_produto | String | "P001" – "P100" | Nome do produto (igual ao código neste dataset) | Silver: produto_id |
-| categoria | String | Electronics, Clothing, Groceries, Furniture, Toys | Categoria do produto | Silver: categoria |
+| id_produto | Integer | 1 – 20 (surrogate key sequencial) | Chave primária (PK) | Gerado: `row_number()` sobre `Window.orderBy("produto_id")` |
+| produto_id_orig | String | "P0001" – "P0020" (20 produtos únicos) | Código original do produto | Silver: `produto_id` |
+| nome_produto | String | "P0001" – "P0020" | Nome do produto (igual ao código neste dataset) | Silver: `produto_id` |
 
 ---
 
-**gold.dim_loja**
+**gold.dim_loja** *(dimensão lean — regiao fica na fato pois varia por registro)*
 
 | Coluna | Tipo | Domínio | Descrição | Linhagem |
 |---|---|---|---|---|
-| id_loja | Integer | ≥ 0 (chave surrogate auto-gerada) | Chave primária (PK) | Gerado: `monotonically_increasing_id()` |
-| loja_id_orig | String | "S001" – "S020" | Código original da loja | Silver: loja_id |
-| nome_loja | String | "S001" – "S020" | Nome da loja (igual ao código neste dataset) | Silver: loja_id |
-| regiao | String | North, South, East, West | Região geográfica da loja | Silver: regiao |
+| id_loja | Integer | 1 – 5 (surrogate key sequencial) | Chave primária (PK) | Gerado: `row_number()` sobre `Window.orderBy("loja_id")` |
+| loja_id_orig | String | "S001" – "S005" (5 lojas únicas) | Código original da loja | Silver: `loja_id` |
+| nome_loja | String | "S001" – "S005" | Nome da loja (igual ao código neste dataset) | Silver: `loja_id` |
 
 ---
 
@@ -249,18 +268,20 @@ Camada analítica no formato de Esquema Estrela. Tabelas gravadas em formato Del
 
 | Coluna | Tipo | Domínio | Descrição | Linhagem |
 |---|---|---|---|---|
-| id_data | Integer | Formato yyyyMMdd (FK → dim_data) | Referência à dimensão data | Silver: data |
-| id_produto | Integer | ≥ 0 (FK → dim_produto) | Referência à dimensão produto | Silver: produto_id |
-| id_loja | Integer | ≥ 0 (FK → dim_loja) | Referência à dimensão loja | Silver: loja_id |
-| nivel_estoque | Integer | ≥ 0 | Estoque disponível no dia | Silver: nivel_estoque |
+| id_data | Integer | Formato yyyyMMdd (FK → dim_data) | Referência à dimensão data | Silver: `data` |
+| id_produto | Integer | 1 – 20 (FK → dim_produto) | Referência à dimensão produto | Silver: `produto_id` via join com dim_produto |
+| id_loja | Integer | 1 – 5 (FK → dim_loja) | Referência à dimensão loja | Silver: `loja_id` via join com dim_loja |
+| categoria | String | CLOTHING, ELECTRONICS, FURNITURE, GROCERIES, TOYS | Categoria do produto no dia | Silver: `categoria` — varia por registro (mesmo produto pode ter categorias distintas) |
+| regiao | String | EAST, NORTH, SOUTH, WEST | Região geográfica da loja no dia | Silver: `regiao` — varia por registro (mesma loja pode ter regiões distintas) |
+| nivel_estoque | Integer | ≥ 0 | Estoque disponível no dia | Silver: `nivel_estoque` |
 | unidades_vendidas | Integer | ≥ 0 | Quantidade vendida no dia | Silver: unidades_vendidas |
 | unidades_pedidas | Integer | ≥ 0 | Quantidade pedida/reposta no dia | Silver: unidades_pedidas |
 | preco_unitario | Double | > 0 | Preço unitário do produto | Silver: preco_unitario |
 | desconto | Double | ≥ 0 | Desconto aplicado no dia | Silver: desconto |
 | feriado_ou_promocao_ativo | Boolean | True / False | Se havia feriado ou promoção ativo no dia | Silver: feriado_ou_promocao_ativo |
 | condicao_climatica | String | Sunny, Rainy, Cloudy, Snowy, "NAO_INFORMADO" | Condição climática | Silver: condicao_climatica |
-| sazonalidade | String | Spring, Summer, Fall, Winter | Estação do ano | Silver: sazonalidade |
-| previsao_demanda | Double | ≥ 0 | Previsão de demanda para o dia | Silver: previsao_demanda |
+| sazonalidade | String | AUTUMN, SPRING, SUMMER, WINTER | Estação do ano | Silver: `sazonalidade` |
+| previsao_demanda | Double | −9,99 a ~518 (inclui valores negativos — ver Qualidade) | Previsão de demanda para o dia | Silver: `previsao_demanda` |
 | preco_concorrente | Double | ≥ 0 | Preço praticado pelo concorrente | Silver: preco_concorrente |
 | demanda_media_7d | Double | ≥ 0 | Média móvel de 7 dias de `unidades_vendidas` por produto+loja | **Calculado**: `avg(unidades_vendidas)` com window de 7 dias |
 | dias_cobertura | Double | 0 a 999 (999 indica produto sem demanda registrada) | Dias até esgotamento do estoque | **Calculado**: `nivel_estoque / demanda_media_7d` |
@@ -291,7 +312,7 @@ As tabelas foram criadas e registradas no Unity Catalog do Databricks Free Editi
 
 ---
 
-## 4. Pipeline de Dados / ETL
+## Pipeline de Dados (Etapa 4.4)
 
 O pipeline foi organizado em notebooks separados por camada, seguindo a Arquitetura Medallion. Cada notebook é independente e pode ser executado isoladamente após o anterior ter sido concluído.
 
@@ -353,7 +374,7 @@ A captura de tela abaixo mostra o Unity Catalog do Databricks com os três schem
 
 ---
 
-## 5. Qualidade de Dados
+## Qualidade de Dados (Etapa 4.5)
 
 > Notebook: [`notebooks/04_qualidade_dados.py`](notebooks/04_qualidade_dados.py)
 
@@ -369,7 +390,7 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 
 ---
 
-## 6. Análise de Dados
+## Análise de Dados (Etapa 4.5)
 
 > Notebook: [`notebooks/05_analise_negocio.py`](notebooks/05_analise_negocio.py)
 
@@ -380,6 +401,12 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 ![Top 15 produtos críticos](images/p1_2_top15_produtos.png)
 ![Estoque crítico por loja e região](images/p1_3_loja_regiao.png)
 
+**P1.1 — Categorias:** todas as cinco categorias apresentam taxa entre 24,6% e 25,0%, sem diferenciação significativa. O risco de ruptura é estrutural e uniforme — não está concentrado em um segmento específico. Em contexto real, isso indicaria falha sistêmica na política de reposição.
+
+**P1.2 — Produtos:** os 15 produtos com maior taxa crítica ficam entre 26% e 28%, acima da média geral de 25%. Esses produtos são candidatos prioritários a revisão do ponto de reposição e formação de estoque de segurança dedicado.
+
+**P1.3 — Lojas e regiões:** as 5 lojas e 4 regiões apresentam taxas equivalentes (~25%), sem concentração geográfica. O problema não é operacional de uma unidade — é sistêmico na política de abastecimento da rede.
+
 </details>
 
 <details>
@@ -387,12 +414,16 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 
 ![Demanda x ruptura](images/p2_demanda.png)
 
+**P2:** este é o achado mais relevante do projeto. Produtos de **baixa demanda concentram 32,4% de dias críticos**, enquanto os de alta demanda têm apenas **1,4%**. O resultado é contraintuitivo: produtos de alto giro recebem mais estoque (média de 387 unidades vs 238) e são menos vulneráveis à ruptura. O risco está nos produtos de menor visibilidade comercial, que recebem reposição insuficiente. A recomendação é priorizar o abastecimento dos produtos de baixa saída, que hoje passam despercebidos pela política de compras.
+
 </details>
 
 <details>
 <summary><strong>P3 — Dias com feriado/promoção ativo geram maior pressão sobre o estoque?</strong></summary>
 
 ![Feriado/Promoção vs dias normais](images/p3_feriado_promocao.png)
+
+**P3:** dias com o indicador ativo (24,5%) e dias normais (25,0%) apresentam taxas praticamente idênticas. As vendas médias também são equivalentes (136,42 vs 136,51 unidades). O indicador `feriado_ou_promocao_ativo` não discrimina risco neste dataset. **Limitação importante:** a coluna original `holiday_promotion` é um inteiro 0/1 que não distingue feriado de promoção — qualquer separação seria arbitrária. Em dados reais com variação de demanda por evento, esta pergunta revelaria picos de pressão sobre o estoque associados a campanhas promocionais.
 
 </details>
 
@@ -402,6 +433,10 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 ![Variação mensal da taxa crítica](images/p4_1_mensal.png)
 ![Evento vs dias normais](images/p4_2_evento_vs_normal.png)
 
+**P4.1 — Sazonalidade mensal:** há variação sazonal visível: março e setembro registram os menores valores (23,8%) e dezembro o maior (25,6%). Amplitude de 1,8 p.p. modesta, mas o padrão sugere que o final do ano concentra maior pressão — período compatível com datas comemorativas e aumento de demanda típico do varejo. Esses meses devem integrar o calendário de compras com reposição antecipada.
+
+**P4.2 — Evento vs dia normal:** dias com evento (24,5%) e dias normais (25,0%) são estatisticamente equivalentes, pela mesma limitação do indicador binário discutida em P3. A análise mensal (P4.1) é o ângulo mais robusto para identificar sazonalidade neste dataset.
+
 </details>
 
 <details>
@@ -409,13 +444,13 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 
 ![Preço x ruptura](images/p5_preco_x_ruptura.png)
 
-> **Ressalva:** o dataset sintético apresenta baixa variação de preços entre produtos, o que limita o poder analítico desta pergunta.
+**P5:** apesar da variação real de preços (R$ 10 a R$ 100, desvio padrão de R$ 26), as taxas críticas são idênticas entre faixas (~25%). O preço não é um fator discriminante neste dataset sintético — o risco de ruptura é determinado pela política de reposição, não pelo valor do produto. Em dados reais de varejo, produtos premium com menor giro poderiam apresentar comportamento diferente.
 
 </details>
 
 ---
 
-## 7. Autoavaliação
+## Autoavaliação
 
 <details>
 <summary><strong>O que foi atingido</strong></summary>

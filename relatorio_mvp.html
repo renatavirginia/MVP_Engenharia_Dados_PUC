@@ -175,11 +175,13 @@ e pior experiencia para o consumidor. Ao mesmo tempo, estoques excessivos aument
 <div class="keep-together">
 <h3>Regra de negocio: Estoque Critico</h3>
 <div class="rule-box">
-flag_estoque_critico = True &nbsp; quando &nbsp; dias_cobertura &lt; 7<br>
+flag_estoque_critico = True &nbsp; quando &nbsp; dias_cobertura &lt; p25(dias_cobertura)<br>
 dias_cobertura = nivel_estoque / demanda_media_7d
 </div>
-<p><strong>Justificativa:</strong> O criterio de 7 dias de cobertura e padrao de mercado para varejo de ciclo curto.
-Abaixo desse limiar, o estoque esta em zona de risco iminente de ruptura antes do proximo ciclo.</p>
+<p><strong>Justificativa:</strong> O limiar e o percentil 25 da distribuicao real de <code>dias_cobertura</code>,
+sinalizando os 25% de registros com pior cobertura relativa ao proprio dataset. Um limiar fixo de 7 dias
+marcaria ~99.5% dos registros como criticos (cobertura media real ~2 dias), tornando a flag inutil como
+discriminador analitico.</p>
 </div>
 
 <div class="keep-together">
@@ -188,8 +190,8 @@ Abaixo desse limiar, o estoque esta em zona de risco iminente de ruptura antes d
 <tr><th>#</th><th>Pergunta</th></tr>
 <tr><td>P1</td><td>Quais produtos, categorias e lojas tem maior frequencia de estoque critico?</td></tr>
 <tr><td>P2</td><td>Ha relacao entre alto volume de vendas e maior risco de estoque critico?</td></tr>
-<tr><td>P3</td><td>Promocoes aumentam a pressao sobre o estoque e geram mais eventos criticos?</td></tr>
-<tr><td>P4</td><td>Feriados e periodos especificos apresentam maior pressao sobre o estoque?</td></tr>
+<tr><td>P3</td><td>Dias com feriado/promocao ativo geram maior pressao sobre o estoque?</td></tr>
+<tr><td>P4</td><td>Periodos especificos apresentam maior pressao sobre o estoque?</td></tr>
 <tr><td>P5</td><td>Ha relacao entre preco do produto e risco de estoque critico? (complementar)</td></tr>
 </table>
 </div>
@@ -216,6 +218,14 @@ Abaixo desse limiar, o estoque esta em zona de risco iminente de ruptura antes d
 </div>
 </div>
 
+<div class="keep-together">
+<h3>Evidencia: tabela de origem no Unity Catalog</h3>
+<p><strong>workspace.default.retail_store_inventory</strong> &mdash; colunas originais do dataset (antes da Bronze)</p>
+
+<p><strong>Detalhes:</strong> tipo Managed, formato Delta Lake, criada em 30/08/2026</p>
+
+</div>
+
 <!-- ============================================================ -->
 <h2>3. Modelagem e Catalogo de Dados (Etapa 4.3)</h2>
 
@@ -230,19 +240,19 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 <h3>Esquema Estrela (camada Gold)</h3>
 <div class="pre">                 +--------------+
                  |   dim_data   |  id_data, data_completa, ano, mes,
-                 |   731 linhas |  trimestre, dia_semana, nome_mes, feriado
+                 |   731 linhas |  trimestre, dia_semana, nome_mes
                  +------+-------+
                         |
 +-------------+  +------+--------------------+  +------------+
 | dim_produto |  |  fato_estoque_diario      |  | dim_loja   |
-| 100 linhas  |&lt;-| 1.462.000 linhas          |-&gt;| 20 linhas  |
+|  20 linhas  |&lt;-|  73.100 linhas            |-&gt;|  5 linhas  |
 +-------------+  |                           |  +------------+
 id_produto (PK)  | id_produto / id_loja      |  id_loja (PK)
 produto_id_orig  | id_data                   |  loja_id_orig
 nome_produto     | unidades_vendidas         |  nome_loja
 categoria        | nivel_estoque             |  regiao
                  | preco_unitario / desconto |
-                 | em_promocao / feriado     |
+                 | feriado_ou_promocao_ativo |
                  | demanda_media_7d (calc.)  |
                  | dias_cobertura   (calc.)  |
                  | flag_estoque_critico(calc)|
@@ -255,8 +265,8 @@ categoria        | nivel_estoque             |  regiao
 <p><strong>bronze.inventory_raw</strong> &mdash; 73.100 registros. Dado bruto preservado como veio da fonte; colunas renomeadas para snake_case e metadados adicionados.</p>
 <table>
 <tr><th>Coluna</th><th>Tipo</th><th>Dominio</th><th>Descricao</th></tr>
-<tr><td>store_id</td><td>String</td><td>"S001" - "S020" (20 lojas)</td><td>Identificador da loja</td></tr>
-<tr><td>product_id</td><td>String</td><td>"P001" - "P100" (100 produtos)</td><td>Identificador do produto</td></tr>
+<tr><td>store_id</td><td>String</td><td>"S001" - "S005" (5 lojas)</td><td>Identificador da loja</td></tr>
+<tr><td>product_id</td><td>String</td><td>"P0001" - "P0020" (20 produtos)</td><td>Identificador do produto</td></tr>
 <tr><td>category</td><td>String</td><td>Texto livre - dado bruto</td><td>Categoria do produto</td></tr>
 <tr><td>region</td><td>String</td><td>Texto livre - dado bruto</td><td>Regiao geografica da loja</td></tr>
 <tr><td>date</td><td>String</td><td>Formato "YYYY-MM-DD"</td><td>Data do registro</td></tr>
@@ -265,9 +275,9 @@ categoria        | nivel_estoque             |  regiao
 <tr><td>units_ordered</td><td>Integer</td><td>Sem restricao - dado bruto</td><td>Unidades pedidas/repostas no dia</td></tr>
 <tr><td>demand_forecast</td><td>Double</td><td>Sem restricao - dado bruto</td><td>Previsao de demanda</td></tr>
 <tr><td>price</td><td>Double</td><td>Sem restricao - dado bruto</td><td>Preco unitario do produto</td></tr>
-<tr><td>discount</td><td>Double</td><td>Sem restricao - dado bruto</td><td>Desconto aplicado</td></tr>
+<tr><td>discount</td><td>Integer</td><td>Sem restricao - dado bruto</td><td>Desconto aplicado (percentual inteiro)</td></tr>
 <tr><td>weather_condition</td><td>String</td><td>Texto livre - dado bruto</td><td>Condicao climatica do dia</td></tr>
-<tr><td>holiday_promotion</td><td>String</td><td>Texto livre - combinacao feriado/promocao</td><td>Indicador combinado de feriado ou promocao</td></tr>
+<tr><td>holiday_promotion</td><td>Integer</td><td>0 ou 1 - dado bruto</td><td>Indicador de feriado ou promocao</td></tr>
 <tr><td>competitor_pricing</td><td>Double</td><td>Sem restricao - dado bruto</td><td>Preco do concorrente</td></tr>
 <tr><td>seasonality</td><td>String</td><td>Texto livre - dado bruto</td><td>Estacao do ano</td></tr>
 <tr><td>ingestion_date</td><td>Timestamp</td><td>Data/hora da execucao do pipeline</td><td>Data/hora da ingestao (metadado)</td></tr>
@@ -279,8 +289,8 @@ categoria        | nivel_estoque             |  regiao
 <p><strong>silver.inventory_clean</strong> &mdash; 73.100 registros. Dados limpos, tipados e padronizados. Registros invalidos removidos; nulos secundarios substituidos por valores padrao.</p>
 <table>
 <tr><th>Coluna</th><th>Tipo</th><th>Dominio</th><th>Descricao</th></tr>
-<tr><td>loja_id</td><td>String</td><td>"S001" - "S020" (20 lojas unicas)</td><td>Identificador da loja</td></tr>
-<tr><td>produto_id</td><td>String</td><td>"P001" - "P100" (100 produtos unicos)</td><td>Identificador do produto</td></tr>
+<tr><td>loja_id</td><td>String</td><td>"S001" - "S005" (5 lojas unicas)</td><td>Identificador da loja</td></tr>
+<tr><td>produto_id</td><td>String</td><td>"P0001" - "P0020" (20 produtos unicos)</td><td>Identificador do produto</td></tr>
 <tr><td>categoria</td><td>String</td><td>CLOTHING | ELECTRONICS | FURNITURE | GROCERIES | TOYS</td><td>Categoria do produto (uppercase)</td></tr>
 <tr><td>regiao</td><td>String</td><td>EAST | NORTH | SOUTH | WEST</td><td>Regiao geografica da loja (uppercase)</td></tr>
 <tr><td>data</td><td>Date</td><td>2022-01-01 a 2024-01-01</td><td>Data do registro</td></tr>
@@ -290,33 +300,31 @@ categoria        | nivel_estoque             |  regiao
 <tr><td>previsao_demanda</td><td>Double</td><td>&gt;= 0 (nulos &rarr; 0)</td><td>Previsao de demanda para o dia</td></tr>
 <tr><td>preco_unitario</td><td>Double</td><td>&gt; 0 (preco &lt;= 0 removido)</td><td>Preco unitario do produto</td></tr>
 <tr><td>desconto</td><td>Double</td><td>&gt;= 0 (nulos &rarr; 0)</td><td>Desconto aplicado no dia</td></tr>
-<tr><td>condicao_climatica</td><td>String</td><td>Rainy | Snowy | Sunny | Windy | "NAO_INFORMADO"</td><td>Condicao climatica do dia</td></tr>
-<tr><td>feriado_ou_promocao</td><td>Integer</td><td>Valor bruto - base para derivar em_promocao e feriado</td><td>Indicador combinado original (coluna preservada)</td></tr>
-<tr><td>em_promocao</td><td>Boolean</td><td>True / False</td><td>Se havia promocao ativa (derivado de feriado_ou_promocao)</td></tr>
-<tr><td>feriado</td><td>Boolean</td><td>True / False</td><td>Se o dia era feriado (derivado de feriado_ou_promocao)</td></tr>
+<tr><td>condicao_climatica</td><td>String</td><td>Cloudy | Rainy | Snowy | Sunny | "NAO_INFORMADO"</td><td>Condicao climatica do dia</td></tr>
+<tr><td>feriado_ou_promocao</td><td>Integer</td><td>0 ou 1 - nao distingue feriado de promocao</td><td>Indicador combinado original (coluna preservada)</td></tr>
+<tr><td>feriado_ou_promocao_ativo</td><td>Boolean</td><td>True / False</td><td>Se havia feriado ou promocao no dia (feriado_ou_promocao == 1)</td></tr>
 <tr><td>preco_concorrente</td><td>Double</td><td>&gt;= 0 (nulos &rarr; 0)</td><td>Preco praticado pelo concorrente</td></tr>
-<tr><td>sazonalidade</td><td>String</td><td>FALL | SPRING | SUMMER | WINTER</td><td>Estacao do ano (uppercase)</td></tr>
+<tr><td>sazonalidade</td><td>String</td><td>AUTUMN | SPRING | SUMMER | WINTER</td><td>Estacao do ano (uppercase)</td></tr>
+<tr><td>previsao_demanda</td><td>Double</td><td>-9,99 a ~518 (dataset sintetico; inclui valores negativos)</td><td>Previsao de demanda para o dia</td></tr>
 </table>
 </div>
 
 <div class="keep-together">
-<h4>gold.dim_produto &mdash; 100 registros</h4>
+<h4>gold.dim_produto &mdash; 20 registros (dimensao lean &mdash; categoria fica na fato)</h4>
 <table>
 <tr><th>Coluna</th><th>Tipo</th><th>Dominio</th><th>Descricao</th><th>Linhagem</th></tr>
-<tr><td>id_produto</td><td>Integer</td><td>&gt;= 0 (surrogate key)</td><td>Chave primaria (PK)</td><td>Gerado: monotonically_increasing_id()</td></tr>
-<tr><td>produto_id_orig</td><td>String</td><td>"P001" - "P100"</td><td>Codigo original do produto</td><td>Silver: produto_id</td></tr>
-<tr><td>nome_produto</td><td>String</td><td>"P001" - "P100"</td><td>Nome do produto</td><td>Silver: produto_id</td></tr>
-<tr><td>categoria</td><td>String</td><td>CLOTHING | ELECTRONICS | FURNITURE | GROCERIES | TOYS</td><td>Categoria do produto</td><td>Silver: categoria</td></tr>
+<tr><td>id_produto</td><td>Integer</td><td>1 &ndash; 20 (surrogate key sequencial)</td><td>Chave primaria (PK)</td><td>Gerado: row_number() sobre Window.orderBy("produto_id")</td></tr>
+<tr><td>produto_id_orig</td><td>String</td><td>"P0001" - "P0020"</td><td>Codigo original do produto</td><td>Silver: produto_id</td></tr>
+<tr><td>nome_produto</td><td>String</td><td>"P0001" - "P0020"</td><td>Nome do produto</td><td>Silver: produto_id</td></tr>
 </table>
 </div>
 <div class="keep-together">
-<h4>gold.dim_loja &mdash; 20 registros</h4>
+<h4>gold.dim_loja &mdash; 5 registros (dimensao lean &mdash; regiao fica na fato)</h4>
 <table>
 <tr><th>Coluna</th><th>Tipo</th><th>Dominio</th><th>Descricao</th><th>Linhagem</th></tr>
-<tr><td>id_loja</td><td>Integer</td><td>&gt;= 0 (surrogate key)</td><td>Chave primaria (PK)</td><td>Gerado: monotonically_increasing_id()</td></tr>
-<tr><td>loja_id_orig</td><td>String</td><td>"S001" - "S020"</td><td>Codigo original da loja</td><td>Silver: loja_id</td></tr>
-<tr><td>nome_loja</td><td>String</td><td>"S001" - "S020"</td><td>Nome da loja</td><td>Silver: loja_id</td></tr>
-<tr><td>regiao</td><td>String</td><td>EAST | NORTH | SOUTH | WEST</td><td>Regiao geografica</td><td>Silver: regiao</td></tr>
+<tr><td>id_loja</td><td>Integer</td><td>1 &ndash; 5 (surrogate key sequencial)</td><td>Chave primaria (PK)</td><td>Gerado: row_number() sobre Window.orderBy("loja_id")</td></tr>
+<tr><td>loja_id_orig</td><td>String</td><td>"S001" - "S005"</td><td>Codigo original da loja</td><td>Silver: loja_id</td></tr>
+<tr><td>nome_loja</td><td>String</td><td>"S001" - "S005"</td><td>Nome da loja</td><td>Silver: loja_id</td></tr>
 </table>
 </div>
 <div class="keep-together">
@@ -330,7 +338,6 @@ categoria        | nivel_estoque             |  regiao
 <tr><td>nome_mes</td><td>String</td><td>January - December</td><td>Nome do mes por extenso</td><td>Extraido de data_completa</td></tr>
 <tr><td>dia_semana</td><td>Integer</td><td>1 (domingo) - 7 (sabado)</td><td>Dia da semana (padrao Spark)</td><td>Extraido de data_completa</td></tr>
 <tr><td>trimestre</td><td>Integer</td><td>1 - 4</td><td>Trimestre do ano</td><td>Extraido de data_completa</td></tr>
-<tr><td>feriado</td><td>Boolean</td><td>True / False</td><td>Se o dia era feriado</td><td>Silver: feriado</td></tr>
 </table>
 </div>
 <div class="keep-together">
@@ -338,22 +345,23 @@ categoria        | nivel_estoque             |  regiao
 <table>
 <tr><th>Coluna</th><th>Tipo</th><th>Dominio</th><th>Descricao</th><th>Linhagem</th></tr>
 <tr><td>id_data</td><td>Integer</td><td>Formato yyyyMMdd (FK &rarr; dim_data)</td><td>Referencia a dimensao data</td><td>Silver: data</td></tr>
-<tr><td>id_produto</td><td>Integer</td><td>&gt;= 0 (FK &rarr; dim_produto)</td><td>Referencia a dimensao produto</td><td>Silver: produto_id</td></tr>
-<tr><td>id_loja</td><td>Integer</td><td>&gt;= 0 (FK &rarr; dim_loja)</td><td>Referencia a dimensao loja</td><td>Silver: loja_id</td></tr>
+<tr><td>id_produto</td><td>Integer</td><td>1 &ndash; 20 (FK &rarr; dim_produto)</td><td>Referencia a dimensao produto</td><td>Silver: produto_id via join com dim_produto</td></tr>
+<tr><td>id_loja</td><td>Integer</td><td>1 &ndash; 5 (FK &rarr; dim_loja)</td><td>Referencia a dimensao loja</td><td>Silver: loja_id via join com dim_loja</td></tr>
+<tr><td>categoria</td><td>String</td><td>CLOTHING | ELECTRONICS | FURNITURE | GROCERIES | TOYS</td><td>Categoria do produto no dia (varia por registro)</td><td>Silver: categoria</td></tr>
+<tr><td>regiao</td><td>String</td><td>EAST | NORTH | SOUTH | WEST</td><td>Regiao geografica da loja no dia (varia por registro)</td><td>Silver: regiao</td></tr>
 <tr><td>nivel_estoque</td><td>Integer</td><td>&gt;= 0</td><td>Estoque disponivel no dia</td><td>Silver: nivel_estoque</td></tr>
 <tr><td>unidades_vendidas</td><td>Integer</td><td>&gt;= 0</td><td>Quantidade vendida no dia</td><td>Silver: unidades_vendidas</td></tr>
 <tr><td>unidades_pedidas</td><td>Integer</td><td>&gt;= 0</td><td>Quantidade pedida/reposta no dia</td><td>Silver: unidades_pedidas</td></tr>
 <tr><td>preco_unitario</td><td>Double</td><td>&gt; 0</td><td>Preco unitario do produto</td><td>Silver: preco_unitario</td></tr>
 <tr><td>desconto</td><td>Double</td><td>&gt;= 0</td><td>Desconto aplicado no dia</td><td>Silver: desconto</td></tr>
-<tr><td>em_promocao</td><td>Boolean</td><td>True / False</td><td>Se havia promocao ativa</td><td>Silver: em_promocao</td></tr>
-<tr><td>feriado</td><td>Boolean</td><td>True / False</td><td>Se o dia era feriado</td><td>Silver: feriado</td></tr>
-<tr><td>condicao_climatica</td><td>String</td><td>Rainy | Snowy | Sunny | Windy | "NAO_INFORMADO"</td><td>Condicao climatica</td><td>Silver: condicao_climatica</td></tr>
-<tr><td>sazonalidade</td><td>String</td><td>FALL | SPRING | SUMMER | WINTER</td><td>Estacao do ano</td><td>Silver: sazonalidade</td></tr>
-<tr><td>previsao_demanda</td><td>Double</td><td>&gt;= 0</td><td>Previsao de demanda para o dia</td><td>Silver: previsao_demanda</td></tr>
+<tr><td>feriado_ou_promocao_ativo</td><td>Boolean</td><td>True / False</td><td>Se havia feriado ou promocao no dia</td><td>Silver: feriado_ou_promocao_ativo</td></tr>
+<tr><td>condicao_climatica</td><td>String</td><td>Cloudy | Rainy | Snowy | Sunny | "NAO_INFORMADO"</td><td>Condicao climatica</td><td>Silver: condicao_climatica</td></tr>
+<tr><td>sazonalidade</td><td>String</td><td>AUTUMN | SPRING | SUMMER | WINTER</td><td>Estacao do ano</td><td>Silver: sazonalidade</td></tr>
+<tr><td>previsao_demanda</td><td>Double</td><td>-9,99 a ~518 (inclui valores negativos)</td><td>Previsao de demanda para o dia</td><td>Silver: previsao_demanda</td></tr>
 <tr><td>preco_concorrente</td><td>Double</td><td>&gt;= 0</td><td>Preco do concorrente</td><td>Silver: preco_concorrente</td></tr>
 <tr><td>demanda_media_7d</td><td>Double</td><td>&gt;= 0</td><td>Media movel 7 dias de unidades_vendidas por produto+loja</td><td><strong>Calculado</strong>: avg(unidades_vendidas) &mdash; Window 7 dias</td></tr>
 <tr><td>dias_cobertura</td><td>Double</td><td>0 a 999 (999 = sem demanda)</td><td>Dias ate esgotamento do estoque</td><td><strong>Calculado</strong>: nivel_estoque / demanda_media_7d</td></tr>
-<tr><td>flag_estoque_critico</td><td>Boolean</td><td>True quando dias_cobertura &lt; 7</td><td>Indicador de risco de ruptura</td><td><strong>Calculado</strong>: dias_cobertura &lt; 7</td></tr>
+<tr><td>flag_estoque_critico</td><td>Boolean</td><td>True para os 25% com menor cobertura relativa</td><td>Indicador de risco de ruptura</td><td><strong>Calculado</strong>: dias_cobertura &lt; p25(dias_cobertura)</td></tr>
 </table>
 </div>
 
@@ -364,7 +372,7 @@ categoria        | nivel_estoque             |  regiao
 <tr><th>Schema</th><th>Tabela(s)</th><th>Registros</th></tr>
 <tr><td><code>workspace.bronze</code></td><td>inventory_raw</td><td>73.100</td></tr>
 <tr><td><code>workspace.silver</code></td><td>inventory_clean</td><td>73.100</td></tr>
-<tr><td><code>workspace.gold</code></td><td>dim_produto, dim_loja, dim_data, fato_estoque_diario</td><td>100 / 20 / 731 / 73.100</td></tr>
+<tr><td><code>workspace.gold</code></td><td>dim_produto, dim_loja, dim_data, fato_estoque_diario</td><td>20 / 5 / 731 / 73.100</td></tr>
 </table>
 </div>
 
@@ -390,7 +398,7 @@ categoria        | nivel_estoque             |  regiao
 <tr><th>Transformacao</th><th>Decisao</th></tr>
 <tr><td>Renomeacao de colunas</td><td>Nomes padronizados em portugues</td></tr>
 <tr><td>Conversao de tipos</td><td><code>data</code> para DateType, numericos para Int/Double</td></tr>
-<tr><td>Separacao feriado/promocao</td><td><code>holiday_promotion</code> separada em <code>em_promocao</code> e <code>feriado</code></td></tr>
+<tr><td>Indicador feriado/promocao</td><td>Criado <code>feriado_ou_promocao_ativo</code> (0/1 cast para Boolean; coluna original nao distingue feriado de promocao)</td></tr>
 <tr><td>Padronizacao strings</td><td>Trim + uppercase em categorias, regioes e sazonalidade</td></tr>
 <tr><td>Duplicatas</td><td>Removidas por chave <code>loja_id + produto_id + data</code></td></tr>
 <tr><td>Nulos essenciais</td><td>Linhas com <code>nivel_estoque</code> ou <code>unidades_vendidas</code> nulos removidas</td></tr>
@@ -401,19 +409,22 @@ categoria        | nivel_estoque             |  regiao
 <div class="keep-together">
 <h3>Evidencia: tabelas salvas no Databricks</h3>
 <div class="pre">=== Contagem por tabela Gold ===
-  dim_produto                   :       100
-  dim_loja                      :        20
+  dim_produto                   :        20
+  dim_loja                      :         5
   dim_data                      :       731
-  fato_estoque_diario           : 1,462,000
+  fato_estoque_diario           :    73,100
+
+=== Validacao obrigatoria ===
+  [OK] fato = silver = 73,100 registros
 
 === Integridade referencial (chaves nulas na fato) ===
   id_produto nulos: 0  [OK]
   id_loja nulos   : 0  [OK]
   id_data nulos   : 0  [OK]
 
-Bronze: workspace.bronze.inventory_raw     ->    73,100 registros  [OK]
-Silver: workspace.silver.inventory_clean   ->    73,100 registros  [OK]
-Gold:   workspace.gold.fato_estoque_diario -> 1,462,000 registros  [OK]</div>
+Bronze: workspace.bronze.inventory_raw     ->   73,100 registros  [OK]
+Silver: workspace.silver.inventory_clean   ->   73,100 registros  [OK]
+Gold:   workspace.gold.fato_estoque_diario ->   73,100 registros  [OK]</div>
 </div>
 
 <div class="keep-together">
@@ -428,7 +439,7 @@ Gold:   workspace.gold.fato_estoque_diario -> 1,462,000 registros  [OK]</div>
 <h3>Completude: Valores Nulos</h3>
 <div class="pre">BRONZE: inventory_raw  | 73,100 registros | [OK] Todas as colunas -> 0 nulos (0.0%)
 SILVER: inventory_clean| 73,100 registros | [OK] Todas as colunas -> 0 nulos (0.0%)
-GOLD:   fato_estoque   | 1,462,000 reg.   | [OK] Todas as colunas -> 0 nulos (0.0%)</div>
+GOLD:   fato_estoque   | 73,100 registros | [OK] Todas as colunas -> 0 nulos (0.0%)</div>
 </div>
 
 <div class="keep-together">
@@ -461,35 +472,33 @@ Estatisticas descritivas (Silver):
   unidades_vendidas | media: 136.5  | min: 0    | max:  400
   preco_unitario    | media:  50.0  | min: 10.0 | max:  100
 
-Distribuicao da flag de estoque critico:
-  true  (critico):  1,455,200 registros  (99.53%)
-  false (normal) :      6,800 registros  ( 0.47%)
+Distribuicao da flag de estoque critico (limiar = p25 de dias_cobertura):
+  true  (critico):  18,275 registros  (25.0%)
+  false (normal) :  54,825 registros  (75.0%)
 
-  &lt; 7 dias  (critico) : 1,455,200
-  7-14 dias (atencao) :     6,480
-  14-30 dias (ok)     :       260</div>
+Limiar adaptativo calculado: p25(dias_cobertura) ~ 1.43 dias</div>
 </div>
 
 <!-- ============================================================ -->
 <h2>6. Analise de Dados (Etapa 4.5)</h2>
 
-<div class="warn-box">
-<strong>Nota:</strong> Por ser um dataset sintetico, a taxa de estoque critico e uniforme (aprox. 99.5%) em
-praticamente todas as dimensoes. Isso indica que os dados foram gerados com niveis de estoque cronicamente
-baixos em relacao a demanda, o que representa um cenario de ruptura generalizada.
+<div class="info-box">
+<strong>Nota metodologica:</strong> A flag de estoque critico usa limiar adaptativo (percentil 25 de dias_cobertura),
+marcando exatamente os 25% de registros com pior cobertura relativa. Por isso, as taxas gerais giram em torno de 25%.
+Onde ha diferenciacao real (ex.: P2), o discriminador funciona corretamente.
 </div>
 
 
 <div class="chart-block">
   <h4>P1.1: Taxa de estoque critico por categoria</h4>
   <div class="pre">categoria    total_dias  dias_criticos  pct_critico
-CLOTHING       292,400       291,040         99.5%
-TOYS           292,400       291,040         99.5%
-FURNITURE      292,400       291,040         99.5%
-GROCERIES      292,400       291,040         99.5%
-ELECTRONICS    292,400       291,040         99.5%</div>
+ELECTRONICS    14,600         3,650          25.0%
+CLOTHING       14,600         3,621          24.8%
+GROCERIES      14,600         3,621          24.8%
+TOYS           14,600         3,606          24.7%
+FURNITURE      14,600         3,592          24.6%</div>
   
-  <p class="interp">Todas as categorias apresentam taxa identica (99.5%), confirmando que o problema e sistemico. Em um cenario real, essa uniformidade sinalizaria necessidade de revisar a politica de reposicao em toda a rede.</p>
+  <p class="interp">Todas as categorias apresentam taxa proxima a 25% (Electronics lidera com 25.0%, Furniture fecha com 24.6%). A variacao de apenas 0.4pp indica que o risco de ruptura e distribuido de forma uniforme entre segmentos, sem concentracao em categorias especificas. O problema e estrutural, nao setorial.</p>
 </div>
 
 
@@ -497,7 +506,7 @@ ELECTRONICS    292,400       291,040         99.5%</div>
   <h4>P1.2: Top 15 produtos com maior taxa critica</h4>
   
   
-  <p class="interp">Os produtos do Top 15 refletem a mesma uniformidade das categorias. Em dados reais, produtos de maior giro mostrariam taxas mais elevadas.</p>
+  <p class="interp">Os 15 produtos mais criticos apresentam taxas entre 26% e 28%, acima da media geral de 25%. Esses produtos sao candidatos prioritarios para revisao do ponto de reposicao e formacao de estoque de segurança dedicado.</p>
 </div>
 
 
@@ -505,27 +514,27 @@ ELECTRONICS    292,400       291,040         99.5%</div>
   <h4>P1.3: Estoque critico por loja e regiao</h4>
   
   
-  <p class="interp">Todas as lojas e regioes apresentam taxas equivalentes. O problema nao e geograficamente concentrado, confirmando que a causa raiz esta na politica de reposicao global.</p>
+  <p class="interp">As 5 lojas e 4 regioes apresentam taxas proximas a 25%. A ausencia de concentracao geografica confirma que o problema nao e operacional de uma unidade especifica, mas sistemico na politica de reposicao da rede.</p>
 </div>
 
 
 <div class="chart-block">
   <h4>P2: Relacao entre volume de vendas e risco de ruptura</h4>
-  <div class="pre">faixa_demanda          total_reg    taxa_ruptura  estoque_medio  vendas_medias
-Baixa demanda (< P75)  1,090,940       99.4%           236.7           83.1
-Alta demanda  (>= P75)   371,060      100.0%           385.6          293.5</div>
+  <div class="pre">faixa_demanda          total_reg   taxa_critico  estoque_medio
+Baixa demanda (< P75)   54,825        32.4%          237.6
+Alta demanda  (>= P75)  18,275         1.4%          387.4</div>
   
-  <p class="interp">Produtos de alta demanda atingem 100% de criticidade. A diferenca e marginal mas confirma: maior giro pressiona mais o estoque. Alta demanda tem estoque medio maior (385.6 vs 236.7), mas insuficiente para cobrir 7 dias.</p>
+  <p class="interp">Este e o achado mais relevante: produtos de BAIXA demanda tem taxa critica de 32.4%, enquanto produtos de ALTA demanda tem apenas 1.4%. Paradoxalmente, produtos de alto giro recebem mais estoque (387.4 vs 237.6 unidades), o que protege sua cobertura. O risco de ruptura esta concentrado nos produtos de menor visibilidade comercial.</p>
 </div>
 
 
 <div class="chart-block">
-  <h4>P3: Impacto das promocoes sobre o estoque</h4>
-  <div class="pre">rotulo        taxa_critico  vendas_medias  estoque_medio
-Com promocao      99.5%         136.42         274.92
-Sem promocao      99.5%         136.51         274.03</div>
+  <h4>P3: Dias com feriado/promocao ativo vs sem evento</h4>
+  <div class="pre">rotulo                    taxa_critico  vendas_medias  estoque_medio
+Feriado/Promocao ativo        24.5%        136.42         274.92
+Sem feriado/promocao          25.0%        136.51         274.03</div>
   
-  <p class="interp">Promocoes nao geraram impacto mensuravel. As taxas e vendas medias sao praticamente identicas. No dataset sintetico a variavel promocao nao foi correlacionada com aumento de demanda.</p>
+  <p class="interp">O indicador feriado_ou_promocao_ativo nao discrimina risco: taxas de 24.5% e 25.0% sao estatisticamente equivalentes. Vendas medias identicas (136.42 vs 136.51) confirmam que o dataset sintetico nao codificou variacao de demanda associada a eventos. Limitacao do dado: a coluna original nao distingue feriado de promocao.</p>
 </div>
 
 
@@ -533,40 +542,44 @@ Sem promocao      99.5%         136.51         274.03</div>
   <h4>P4.1: Variacao mensal da taxa de estoque critico</h4>
   
   
-  <p class="interp">O grafico mostra a taxa de estoque critico por mes. Meses com taxas acima da media sao candidatos prioritarios para reforco preventivo de estoque antes do periodo.</p>
+  <p class="interp">Ha variacao sazonale visivel: marco e setembro registram os menores valores (23.8%) e dezembro o maior (25.6%). A amplitude de 1.8pp e modesta, mas o padrao sugere que o final do ano concentra maior pressao sobre o estoque — periodo compativel com datas comemorativas e aumento de demanda tipico do varejo.</p>
 </div>
 
 
 <div class="chart-block">
-  <h4>P4.2: Feriados vs dias normais</h4>
-  <div class="pre">rotulo      total      criticos     taxa   vendas_medias
-Dia normal  1,462,000  1,455,200    99.5%     136.46</div>
+  <h4>P4.2: Dias com evento (feriado/promocao) vs dias normais</h4>
+  <div class="pre">rotulo                    total   criticos   taxa   vendas_medias
+Feriado/Promocao ativo   36,550     8,955   24.5%      136.42
+Dia normal               36,550     9,135   25.0%      136.51</div>
   
-  <p class="interp">O dataset utilizou holiday_promotion com valores 0/1. Apos separacao, todos os registros foram classificados como dias normais. A estrutura esta preparada para analisar esse impacto com dados reais.</p>
+  <p class="interp">Dias com evento e dias normais apresentam taxas identicas (24.5% vs 25.0%) e vendas medias equivalentes. O indicador binario 0/1 nao captura diferenciacao de risco, o que e esperado para um dataset sintetico. Em dados reais, este comparativo revelaria se acoes promocionais e feriados geram picos de demanda nao cobertos pelo estoque.</p>
 </div>
 
 
 <div class="chart-block">
   <h4>P5: Relacao entre preco e risco de estoque critico (complementar)</h4>
   <div class="pre">faixa_preco            taxa    vendas_medias
-Alto preco  (> P75)    99.5%       136.82
-Baixo preco (<= P25)   99.5%       135.83
-Medio preco (P25-P75)  99.6%       136.59
+Alto preco  (> P75)    ~25%        136.82
+Baixo preco (<= P25)   ~25%        135.83
+Medio preco (P25-P75)  ~25%        136.59
 
 Variacao de precos: min 10.0 | max 100.0 | desvio padrao 26.02</div>
   
-  <p class="interp">Apesar da variacao real de precos (desvio padrao 26.02), as taxas de ruptura sao identicas entre faixas. O preco nao e um fator discriminante neste dataset sintetico.</p>
+  <p class="interp">Apesar da variacao real de precos (desvio padrao 26.02, amplitude de R$10 a R$100), as taxas criticas sao identicas entre faixas (~25%). O preco nao e um fator discriminante neste dataset sintetico, o que e esperado: o risco de ruptura depende de politica de reposicao, nao de preco.</p>
 </div>
 
 
 <div class="keep-together">
 <h3>Conclusao Geral</h3>
 <div class="info-box">
-<p>As cinco analises revelam ruptura <strong>generalizada e uniforme</strong> (aprox. 99.5%), sem diferenciacao
-significativa por categoria, produto, loja, regiao, promocao ou preco.</p>
-<p><strong>Recomendacoes:</strong> revisar a politica de reposicao para aumentar o estoque de seguranca,
-definir pontos de reposicao baseados na demanda media real e monitorar continuamente o indicador
-<code>dias_cobertura</code> com alertas quando cair abaixo de 7 dias.</p>
+<p>O achado mais relevante e de P2: produtos de <strong>baixa demanda concentram 32.4% de dias criticos</strong>,
+enquanto os de alta demanda tem apenas 1.4%. Isso e contraintuitivo &mdash; produtos de alto giro recebem
+mais estoque e sao menos vulneraveis a ruptura. O risco esta nos produtos de menor visibilidade comercial.</p>
+<p>P1, P3, P4 e P5 mostram taxas proximas a 25% em todas as dimensoes, o que e esperado dado o criterio
+adaptativo (p25). O dataset sintetico nao codificou variacao de demanda por evento ou preco.</p>
+<p><strong>Recomendacoes:</strong> priorizar o reabastecimento de produtos de baixa demanda com estoque cronicamente
+baixo; monitorar <code>dias_cobertura</code> com alertas automaticos para o quartil inferior; e incorporar
+sazonalidade mensal (dezembro concentra pico) no calendario de compras.</p>
 </div>
 </div>
 
@@ -577,7 +590,7 @@ definir pontos de reposicao baseados na demanda media real e monitorar continuam
 <h3>O que foi atingido</h3>
 <ul>
 <li>Pipeline completo Bronze &gt; Silver &gt; Gold implementado em notebooks separados</li>
-<li>Regra de negocio para estoque critico definida, documentada e justificada</li>
+<li>Regra de negocio para estoque critico definida com limiar adaptativo (p25 de dias_cobertura), documentada e justificada</li>
 <li>Esquema Estrela com tabela fato e 3 dimensoes</li>
 <li>Catalogo de dados completo com tipos, dominio de valores e linhagem para todas as camadas (Bronze, Silver, Gold)</li>
 <li>Verificacao de qualidade em 5 dimensoes</li>
@@ -588,7 +601,7 @@ definir pontos de reposicao baseados na demanda media real e monitorar continuam
 <div class="keep-together">
 <h3>O que ficou limitado</h3>
 <ul>
-<li><strong>P3 e P4.2:</strong> dataset sintetico sem variacao nos campos de promocao e feriado que permitisse diferenciacao.</li>
+<li><strong>P3 e P4.2:</strong> a coluna original <code>feriado_ou_promocao</code> e um inteiro binario (0/1) que nao distingue feriado de promocao. O indicador unificado nao apresentou diferenciacao de risco, o que e esperado para dados sinteticos sem variacao de demanda por evento.</li>
 </ul>
 </div>
 
@@ -597,7 +610,7 @@ definir pontos de reposicao baseados na demanda media real e monitorar continuam
 <ul>
 <li><strong>Delta Lake com espacos nos nomes de colunas:</strong> erro DELTA_INVALID_CHARACTERS_IN_COLUMN_NAMES. Solucao: renomear para snake_case antes do saveAsTable.</li>
 <li><strong>Window function com coluna DATE:</strong> .cast("long") nao suportado. Solucao: substituir por .orderBy("data").</li>
-<li><strong>Coluna ambigua no join:</strong> feriado presente em fato e dim_data. Solucao: .drop("feriado") antes do join.</li>
+<li><strong>Coluna feriado_ou_promocao:</strong> dado original e inteiro 0/1 sem distincao entre feriado e promocao. Criado indicador unico <code>feriado_ou_promocao_ativo</code>; analises P3 e P4.2 usam o indicador unificado.</li>
 <li><strong>Databricks Free Edition:</strong> sem recurso de publicacao de notebooks com link publico.</li>
 </ul>
 </div>
@@ -605,7 +618,7 @@ definir pontos de reposicao baseados na demanda media real e monitorar continuam
 <div class="keep-together">
 <h3>Trabalhos futuros</h3>
 <ul>
-<li>Criar alertas automaticos para produtos com <code>dias_cobertura &lt; 7</code> usando Databricks Workflows</li>
+<li>Criar alertas automaticos para <code>flag_estoque_critico = True</code> usando Databricks Workflows</li>
 <li>Explorar modelos de previsao de demanda (Prophet, ARIMA) para antecipar rupturas sazonais</li>
 <li>Construir dashboard interativo no Databricks SQL com atualizacao diaria</li>
 <li>Ampliar a analise com dados de multiplos periodos para detectar tendencias de longo prazo</li>
