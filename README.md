@@ -49,11 +49,11 @@ O objetivo deste projeto é construir um pipeline de dados capaz de organizar e 
 
 O dataset não possui uma coluna explícita de ruptura. Foi criada a seguinte regra:
 
-> **`flag_estoque_critico = True`** quando `dias_cobertura < 7`
+> **`flag_estoque_critico = True`** quando `dias_cobertura < p25(dias_cobertura)`
 >
 > onde `dias_cobertura = nivel_estoque / demanda_media_7d`
 
-**Justificativa:** O critério de 7 dias de cobertura é padrão de mercado para varejo de ciclo curto. Abaixo desse limiar, o estoque está em zona de risco iminente de ruptura antes do próximo ciclo de reabastecimento.
+**Justificativa:** O limiar é o percentil 25 da distribuição real de `dias_cobertura`, sinalizando os 25% de registros com pior cobertura relativa. Um limiar fixo de 7 dias marcaria ~99,5% dos registros como críticos neste dataset (cobertura média real ≈ 2 dias), tornando a flag inútil como discriminador analítico.
 
 </details>
 
@@ -64,8 +64,8 @@ O dataset não possui uma coluna explícita de ruptura. Foi criada a seguinte re
 |---|---|
 | P1 | Quais produtos, categorias e lojas têm maior frequência de estoque crítico? |
 | P2 | Há relação entre alto volume de vendas e maior risco de estoque crítico? |
-| P3 | Promoções aumentam a pressão sobre o estoque e geram mais eventos críticos? |
-| P4 | Feriados e períodos específicos apresentam maior pressão sobre o estoque? |
+| P3 | Dias com feriado/promoção ativo geram maior pressão sobre o estoque? |
+| P4 | Períodos específicos apresentam maior pressão sobre o estoque? |
 | P5 | Há relação entre preço do produto e risco de estoque crítico? *(complementar)* |
 
 </details>
@@ -122,7 +122,6 @@ inventory_raw            inventory_clean                  fato_estoque_diario
                         | trimestre        |
                         | dia_semana       |
                         | nome_mes         |
-                        | feriado          |
                         +--------+---------+
                                  |
 +----------------+    +----------+-------------------+    +--------------+
@@ -134,7 +133,7 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 | categoria      |    | unidades_vendidas            |    | regiao       |
 +----------------+    | nivel_estoque                |    +--------------+
                       | preco_unitario               |
-                      | em_promocao / feriado        |
+                      | feriado_ou_promocao_ativo    |
                       | demanda_media_7d  (calculado)|
                       | dias_cobertura    (calculado)|
                       | flag_estoque_critico (calc.) |
@@ -148,25 +147,25 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 
 73.100 registros. Dado bruto preservado exatamente como veio da fonte. Colunas renomeadas para snake_case (necessário para compatibilidade com Delta Lake) e dois metadados de controle adicionados.
 
-| Coluna | Tipo | Domínio | Descrição |
-|---|---|---|---|
-| store_id | String | "S001" – "S020" (20 lojas) | Identificador da loja |
-| product_id | String | "P001" – "P100" (100 produtos) | Identificador do produto |
-| category | String | Texto livre — valores brutos da fonte | Categoria do produto |
-| region | String | Texto livre — valores brutos da fonte | Região geográfica da loja |
-| date | String | Formato "YYYY-MM-DD" | Data do registro |
-| inventory_level | Integer | Sem restrição — dado bruto | Nível de estoque disponível |
-| units_sold | Integer | Sem restrição — dado bruto | Unidades vendidas no dia |
-| units_ordered | Integer | Sem restrição — dado bruto | Unidades pedidas/repostas no dia |
-| demand_forecast | Double | Sem restrição — dado bruto | Previsão de demanda |
-| price | Double | Sem restrição — dado bruto | Preço unitário do produto |
-| discount | Double | Sem restrição — dado bruto | Desconto aplicado |
-| weather_condition | String | Texto livre — valores brutos da fonte | Condição climática do dia |
-| holiday_promotion | String | Texto livre — combinação feriado/promoção | Indicador de feriado ou promoção |
-| competitor_pricing | Double | Sem restrição — dado bruto | Preço do concorrente |
-| seasonality | String | Texto livre — valores brutos da fonte | Estação do ano |
-| ingestion_date | Timestamp | Data/hora da execução do pipeline | Data/hora da ingestão (metadado) |
-| source_table | String | Sempre "workspace.default.retail_store_inventory" | Tabela de origem no Unity Catalog (metadado) |
+| Coluna | Tipo | Domínio | Descrição | Linhagem |
+|---|---|---|---|---|
+| store_id | String | "S001" – "S005" (5 lojas) | Identificador da loja | Fonte: `workspace.default.retail_store_inventory` — coluna `Store ID` |
+| product_id | String | "P0001" – "P0020" (20 produtos) | Identificador do produto | Fonte: `workspace.default.retail_store_inventory` — coluna `Product ID` |
+| category | String | Texto livre — valores brutos da fonte | Categoria do produto | Fonte: coluna `Category` |
+| region | String | Texto livre — valores brutos da fonte | Região geográfica da loja | Fonte: coluna `Region` |
+| date | String | Formato "YYYY-MM-DD" | Data do registro | Fonte: coluna `Date` |
+| inventory_level | Integer | Sem restrição — dado bruto | Nível de estoque disponível | Fonte: coluna `Inventory Level` |
+| units_sold | Integer | Sem restrição — dado bruto | Unidades vendidas no dia | Fonte: coluna `Units Sold` |
+| units_ordered | Integer | Sem restrição — dado bruto | Unidades pedidas/repostas no dia | Fonte: coluna `Units Ordered` |
+| demand_forecast | Double | Sem restrição — dado bruto | Previsão de demanda | Fonte: coluna `Demand Forecast` |
+| price | Double | Sem restrição — dado bruto | Preço unitário do produto | Fonte: coluna `Price` |
+| discount | Integer | Sem restrição — dado bruto | Desconto aplicado (valor percentual inteiro) | Fonte: coluna `Discount` — tipo inferido pelo Spark como bigint |
+| weather_condition | String | Texto livre — valores brutos da fonte | Condição climática do dia | Fonte: coluna `Weather Condition` |
+| holiday_promotion | Integer | 0 ou 1 — dado bruto | Indicador de feriado ou promoção | Fonte: coluna `Holiday/Promotion` — tipo inferido pelo Spark como bigint |
+| competitor_pricing | Double | Sem restrição — dado bruto | Preço do concorrente | Fonte: coluna `Competitor Pricing` |
+| seasonality | String | Texto livre — valores brutos da fonte | Estação do ano | Fonte: coluna `Seasonality` |
+| ingestion_date | Timestamp | Data/hora da execução do pipeline | Data/hora da ingestão (metadado) | **Calculado**: `current_timestamp()` no notebook `01_bronze_ingestao.py` |
+| source_table | String | Sempre "workspace.default.retail_store_inventory" | Tabela de origem no Unity Catalog (metadado) | **Calculado**: valor literal adicionado no notebook `01_bronze_ingestao.py` |
 
 </details>
 
@@ -175,25 +174,24 @@ inventory_raw            inventory_clean                  fato_estoque_diario
 
 73.100 registros. Dados limpos, tipados e padronizados. Nomes de colunas em português. Registros com valores impossíveis e nulos em colunas essenciais foram removidos; nulos em colunas secundárias foram substituídos por valores padrão.
 
-| Coluna | Tipo | Domínio | Descrição |
-|---|---|---|---|
-| loja_id | String | "S001" – "S020" (20 lojas únicas) | Identificador da loja |
-| produto_id | String | "P001" – "P100" (100 produtos únicos) | Identificador do produto |
-| categoria | String | Uppercase; 5 categorias únicas (Electronics, Clothing, Groceries, Furniture, Toys) | Categoria do produto |
-| regiao | String | Uppercase; 4 regiões únicas (North, South, East, West) | Região geográfica da loja |
-| data | Date | Período do dataset — mín./máx. verificados em `04_qualidade_dados` | Data do registro |
-| nivel_estoque | Integer | ≥ 0 (registros com valor negativo removidos) | Estoque disponível no dia |
-| unidades_vendidas | Integer | ≥ 0 (registros com valor negativo removidos) | Unidades vendidas no dia |
-| unidades_pedidas | Integer | ≥ 0 | Unidades pedidas/repostas no dia |
-| previsao_demanda | Double | ≥ 0 (nulos substituídos por 0) | Previsão de demanda para o dia |
-| preco_unitario | Double | > 0 (registros com preço ≤ 0 removidos) | Preço unitário do produto |
-| desconto | Double | ≥ 0 (nulos substituídos por 0) | Desconto aplicado no dia |
-| condicao_climatica | String | Sunny, Rainy, Cloudy, Snowy, "NAO_INFORMADO" (para nulos) | Condição climática do dia |
-| feriado_ou_promocao | Integer | Valor bruto da fonte — base para derivar `em_promocao` e `feriado` | Indicador combinado original de feriado ou promoção (coluna original preservada) |
-| em_promocao | Boolean | True / False | Se havia promoção ativa no dia (derivado de `feriado_ou_promocao`) |
-| feriado | Boolean | True / False | Se o dia era feriado |
-| preco_concorrente | Double | ≥ 0 (nulos substituídos por 0) | Preço praticado pelo concorrente |
-| sazonalidade | String | Uppercase; Spring, Summer, Fall, Winter | Estação do ano |
+| Coluna | Tipo | Domínio | Descrição | Linhagem |
+|---|---|---|---|---|
+| loja_id | String | "S001" – "S005" (5 lojas únicas) | Identificador da loja | Bronze: `store_id` — renomeado para português |
+| produto_id | String | "P0001" – "P0020" (20 produtos únicos) | Identificador do produto | Bronze: `product_id` — renomeado para português |
+| categoria | String | Uppercase; 5 categorias únicas (Electronics, Clothing, Groceries, Furniture, Toys) | Categoria do produto | Bronze: `category` — padronizado para uppercase |
+| regiao | String | Uppercase; 4 regiões únicas (North, South, East, West) | Região geográfica da loja | Bronze: `region` — padronizado para uppercase |
+| data | Date | Período do dataset — mín./máx. verificados em `04_qualidade_dados` | Data do registro | Bronze: `date` — convertido de String para DateType |
+| nivel_estoque | Integer | ≥ 0 (registros com valor negativo removidos) | Estoque disponível no dia | Bronze: `inventory_level` — convertido para IntegerType |
+| unidades_vendidas | Integer | ≥ 0 (registros com valor negativo removidos) | Unidades vendidas no dia | Bronze: `units_sold` — convertido para IntegerType |
+| unidades_pedidas | Integer | ≥ 0 | Unidades pedidas/repostas no dia | Bronze: `units_ordered` — convertido para IntegerType |
+| previsao_demanda | Double | ≥ 0 (nulos substituídos por 0) | Previsão de demanda para o dia | Bronze: `demand_forecast` — convertido para DoubleType; nulos → 0 |
+| preco_unitario | Double | > 0 (registros com preço ≤ 0 removidos) | Preço unitário do produto | Bronze: `price` — convertido para DoubleType |
+| desconto | Double | ≥ 0 (nulos substituídos por 0) | Desconto aplicado no dia | Bronze: `discount` — convertido para DoubleType; nulos → 0 |
+| condicao_climatica | String | Sunny, Rainy, Cloudy, Snowy, "NAO_INFORMADO" (para nulos) | Condição climática do dia | Bronze: `weather_condition` — nulos → "NAO_INFORMADO" |
+| feriado_ou_promocao | Integer | 0 ou 1 — não distingue feriado de promoção | Indicador combinado original (coluna original preservada) | Bronze: `holiday_promotion` — convertido para Integer |
+| feriado_ou_promocao_ativo | Boolean | True / False | Se havia feriado ou promoção no dia | **Calculado**: `feriado_ou_promocao.cast("integer") == 1` |
+| preco_concorrente | Double | ≥ 0 (nulos substituídos por 0) | Preço praticado pelo concorrente | Bronze: `competitor_pricing` — convertido para DoubleType; nulos → 0 |
+| sazonalidade | String | Uppercase; Spring, Summer, Fall, Winter | Estação do ano | Bronze: `seasonality` — padronizado para uppercase |
 
 </details>
 
@@ -204,10 +202,10 @@ Camada analítica no formato de Esquema Estrela. Tabelas gravadas em formato Del
 
 | Tabela | Tipo | Registros |
 |---|---|---|
-| `dim_produto` | Dimensão | 100 |
-| `dim_loja` | Dimensão | 20 |
+| `dim_produto` | Dimensão | 20 |
+| `dim_loja` | Dimensão | 5 |
 | `dim_data` | Dimensão | 731 |
-| `fato_estoque_diario` | Fato | ~73.100 |
+| `fato_estoque_diario` | Fato | 73.100 |
 
 ---
 
@@ -244,7 +242,6 @@ Camada analítica no formato de Esquema Estrela. Tabelas gravadas em formato Del
 | nome_mes | String | January – December | Nome do mês por extenso | Extraído de data_completa |
 | dia_semana | Integer | 1 (domingo) – 7 (sábado) | Dia da semana (padrão Spark) | Extraído de data_completa |
 | trimestre | Integer | 1 – 4 | Trimestre do ano | Extraído de data_completa |
-| feriado | Boolean | True / False | Se o dia era feriado | Silver: feriado |
 
 ---
 
@@ -260,15 +257,14 @@ Camada analítica no formato de Esquema Estrela. Tabelas gravadas em formato Del
 | unidades_pedidas | Integer | ≥ 0 | Quantidade pedida/reposta no dia | Silver: unidades_pedidas |
 | preco_unitario | Double | > 0 | Preço unitário do produto | Silver: preco_unitario |
 | desconto | Double | ≥ 0 | Desconto aplicado no dia | Silver: desconto |
-| em_promocao | Boolean | True / False | Se havia promoção ativa | Silver: em_promocao |
-| feriado | Boolean | True / False | Se o dia era feriado | Silver: feriado |
+| feriado_ou_promocao_ativo | Boolean | True / False | Se havia feriado ou promoção ativo no dia | Silver: feriado_ou_promocao_ativo |
 | condicao_climatica | String | Sunny, Rainy, Cloudy, Snowy, "NAO_INFORMADO" | Condição climática | Silver: condicao_climatica |
 | sazonalidade | String | Spring, Summer, Fall, Winter | Estação do ano | Silver: sazonalidade |
 | previsao_demanda | Double | ≥ 0 | Previsão de demanda para o dia | Silver: previsao_demanda |
 | preco_concorrente | Double | ≥ 0 | Preço praticado pelo concorrente | Silver: preco_concorrente |
 | demanda_media_7d | Double | ≥ 0 | Média móvel de 7 dias de `unidades_vendidas` por produto+loja | **Calculado**: `avg(unidades_vendidas)` com window de 7 dias |
 | dias_cobertura | Double | 0 a 999 (999 indica produto sem demanda registrada) | Dias até esgotamento do estoque | **Calculado**: `nivel_estoque / demanda_media_7d` |
-| flag_estoque_critico | Boolean | True quando dias_cobertura < 7; False caso contrário | Indicador de risco de ruptura | **Calculado**: `dias_cobertura < 7` |
+| flag_estoque_critico | Boolean | True para os 25% de registros com menor cobertura relativa | Indicador de risco de ruptura | **Calculado**: `dias_cobertura < p25(dias_cobertura)` |
 
 </details>
 
@@ -315,7 +311,7 @@ O pipeline foi organizado em notebooks separados por camada, seguindo a Arquitet
 |---|---|
 | Renomeação de colunas | Nomes padronizados em português |
 | Conversão de tipos | `data` → DateType, numéricos → Int/Double |
-| Separação feriado/promoção | Criadas colunas booleanas `em_promocao` e `feriado` |
+| Indicador feriado/promoção | Criado indicador único `feriado_ou_promocao_ativo` (coluna original não distingue feriado de promoção) |
 | Padronização de strings | Trim + uppercase em categorias e regiões |
 | Duplicatas | Removidas por chave `loja_id + produto_id + data` |
 | Nulos essenciais | Linhas com `nivel_estoque` ou `unidades_vendidas` nulos removidas |
@@ -331,7 +327,7 @@ O pipeline foi organizado em notebooks separados por camada, seguindo a Arquitet
 |---|---|---|
 | `demanda_media_7d` | Média móvel de 7 dias de `unidades_vendidas` por produto+loja | PySpark Window Function |
 | `dias_cobertura` | `nivel_estoque / demanda_media_7d` | PySpark |
-| `flag_estoque_critico` | `dias_cobertura < 7` | PySpark |
+| `flag_estoque_critico` | `dias_cobertura < p25(dias_cobertura)` (limiar adaptativo) | PySpark |
 
 </details>
 
@@ -343,8 +339,8 @@ As tabelas foram gravadas no formato **Delta Lake** dentro do Unity Catalog do *
 ```
 Tabela workspace.bronze.inventory_raw gravada com 73.100 registros.
 Tabela workspace.silver.inventory_clean gravada com 73.100 registros.
-dim_produto: 100 registros
-dim_loja: 20 registros
+dim_produto: 20 registros
+dim_loja: 5 registros
 dim_data: 731 registros
 fato_estoque_diario: 73.100 registros
 ```
@@ -380,31 +376,31 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 <details>
 <summary><strong>P1 — Quais produtos, categorias e lojas têm maior frequência de estoque crítico?</strong></summary>
 
-![Estoque crítico por categoria](images/p1_1_estoque_critico_por_categoria.png)
-![Top 15 produtos críticos](images/p1_2_top15_produtos_criticos.png)
-![Estoque crítico por loja e região](images/p1_3_estoque_critico_loja_regiao.png)
+![Estoque crítico por categoria](images/p1_1_categoria.png)
+![Top 15 produtos críticos](images/p1_2_top15_produtos.png)
+![Estoque crítico por loja e região](images/p1_3_loja_regiao.png)
 
 </details>
 
 <details>
 <summary><strong>P2 — Há relação entre alto volume de vendas e maior risco de estoque crítico?</strong></summary>
 
-![Demanda x ruptura](images/p2_demanda_x_ruptura.png)
+![Demanda x ruptura](images/p2_demanda.png)
 
 </details>
 
 <details>
-<summary><strong>P3 — Promoções aumentam a pressão sobre o estoque?</strong></summary>
+<summary><strong>P3 — Dias com feriado/promoção ativo geram maior pressão sobre o estoque?</strong></summary>
 
-![Impacto das promoções](images/p3_impacto_promocoes.png)
+![Feriado/Promoção vs dias normais](images/p3_feriado_promocao.png)
 
 </details>
 
 <details>
-<summary><strong>P4 — Feriados e períodos específicos apresentam maior pressão?</strong></summary>
+<summary><strong>P4 — Períodos específicos apresentam maior pressão sobre o estoque?</strong></summary>
 
-![Variação mensal](images/p4_1_variacao_mensal.png)
-![Feriados vs dias normais](images/p4_2_feriados_vs_dias_normais.png)
+![Variação mensal da taxa crítica](images/p4_1_mensal.png)
+![Evento vs dias normais](images/p4_2_evento_vs_normal.png)
 
 </details>
 
@@ -425,7 +421,7 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 <summary><strong>O que foi atingido</strong></summary>
 
 - [x] Pipeline completo Bronze → Silver → Gold implementado em notebooks separados por camada
-- [x] Regra de negócio para estoque crítico definida, documentada e justificada (`dias_cobertura < 7`)
+- [x] Regra de negócio para estoque crítico definida, documentada e justificada (limiar adaptativo p25 de `dias_cobertura`)
 - [x] Esquema Estrela com tabela fato (`fato_estoque_diario`) e 3 dimensões (`dim_produto`, `dim_loja`, `dim_data`)
 - [x] Catálogo de dados completo com tipos, descrições, domínio de valores e linhagem para todas as camadas (Bronze, Silver, Gold)
 - [x] Verificação de qualidade em 5 dimensões: completude, unicidade, consistência, acurácia e outliers
@@ -439,7 +435,7 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 - **P5 (Preço x Ruptura):** dataset sintético com baixa variação de preços limita o poder analítico.
 - **Compatibilidade com Delta Lake:** colunas com espaços nos nomes causaram erro `DELTA_INVALID_CHARACTERS_IN_COLUMN_NAMES` — resolvido renomeando todas para snake_case.
 - **Window function com DATE:** `.cast("long")` em coluna `DATE` não é suportado na versão do Spark utilizada — resolvido com `.orderBy("data")`.
-- **Coluna ambígua no join:** `fato_estoque_diario` e `dim_data` possuem ambas a coluna `feriado` — resolvido com `.drop("feriado")` na dimensão antes da junção.
+- **Coluna feriado_ou_promocao:** a coluna original é inteiro binário (0/1) e não distingue feriado de promoção — criado indicador único `feriado_ou_promocao_ativo`; análises P3 e P4.2 usam o indicador unificado.
 - **Databricks Free Edition:** não possui publicação de notebooks com link público.
 
 </details>
@@ -448,7 +444,7 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 <summary><strong>Trabalhos futuros</strong></summary>
 
 - Preencher descrições das tabelas e colunas diretamente no Unity Catalog
-- Criar alertas automáticos para `dias_cobertura < 7` usando Databricks Workflows
+- Criar alertas automáticos para `flag_estoque_critico = True` usando Databricks Workflows
 - Explorar modelos de previsão de demanda (Prophet, ARIMA) para antecipar rupturas sazonais
 - Construir dashboard interativo no Databricks SQL com atualização diária
 - Ampliar a análise com dados de múltiplos períodos para detectar tendências de longo prazo
