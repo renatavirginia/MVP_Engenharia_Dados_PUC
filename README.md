@@ -21,6 +21,7 @@
 - [Pipeline de Dados (Etapa 4.4)](#pipeline-de-dados-etapa-44)
 - [Qualidade de Dados (Etapa 4.5)](#qualidade-de-dados-etapa-45)
 - [Análise de Dados (Etapa 4.5)](#análise-de-dados-etapa-45)
+- [Conclusão](#conclusão)
 - [Autoavaliação](#7-autoavaliação)
 - [Tecnologias](#tecnologias)
 
@@ -446,6 +447,20 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 **P5:** apesar da variação real de preços (R$ 10 a R$ 100, desvio padrão de R$ 26), as taxas críticas são idênticas entre faixas (~25%). O preço não é um fator discriminante neste dataset sintético — o risco de ruptura é determinado pela política de reposição, não pelo valor do produto. Em dados reais de varejo, produtos premium com menor giro poderiam apresentar comportamento diferente.
 
 </details>
+
+---
+
+## Conclusão
+
+O achado mais relevante do projeto vem de **P2**: produtos de **baixa demanda concentram 32,4% de dias críticos**, enquanto os de alta demanda apresentam apenas **1,4%**. O resultado é contraintuitivo — produtos de alto giro recebem mais estoque (média de 387 unidades vs 238) e, por isso, ficam menos vulneráveis à ruptura. O risco de ruptura está, portanto, concentrado nos produtos de **menor visibilidade comercial**, que recebem reposição insuficiente.
+
+As demais perguntas (**P1**, **P3**, **P4** e **P5**) mostram taxas próximas a 25% em todas as dimensões — categoria, loja, região, evento e faixa de preço. Esse comportamento é esperado dado o critério adaptativo (limiar no percentil 25 de `dias_cobertura`) e a natureza **sintética** do dataset, que não codificou variação de demanda associada a eventos (feriado/promoção) ou a preço. A única exceção com sinal claro é a sazonalidade mensal (**P4.1**), em que dezembro concentra o maior valor (25,6%) contra março e setembro nos menores (23,8%).
+
+**Recomendações de negócio:**
+
+- **Priorizar o reabastecimento dos produtos de baixa demanda** com estoque cronicamente baixo, hoje despercebidos pela política de compras.
+- **Monitorar `dias_cobertura`** com alertas automáticos para o quartil inferior da distribuição (`flag_estoque_critico = True`).
+- **Incorporar a sazonalidade mensal** ao calendário de compras, com reposição antecipada nos meses de maior pressão (dezembro).
 
 ---
 
