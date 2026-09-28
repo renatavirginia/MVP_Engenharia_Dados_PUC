@@ -471,23 +471,28 @@ Sazonalidade:   AUTUMN | SPRING | SUMMER | WINTER</div>
   Cobertura negativa     : 0  [OK]
 
 Estatisticas descritivas (Silver):
-  nivel_estoque     | media: 274.5  | min: 0    | max: 1000
-  unidades_vendidas | media: 136.5  | min: 0    | max:  400
-  preco_unitario    | media:  50.0  | min: 10.0 | max:  100
+  nivel_estoque     | media: 274.5  | min: 50   | max:  500
+  unidades_vendidas | media: 136.5  | min: 0    | max:  499
+  preco_unitario    | media:  55.1  | min: 10.0 | max:  100
+  previsao_demanda  | media: 141.5  | min: -9.99| max:  518.55
+
+Estatisticas de cobertura (Gold):
+  dias_cobertura    | media:  2.17  | min: 0.2  | max:  999.0
+  demanda_media_7d  | media: 136.5  | min: 0.0  | max:  393.0
 
 Distribuicao da flag de estoque critico (limiar = p25 de dias_cobertura):
-  true  (critico):  18,275 registros  (25.0%)
-  false (normal) :  54,825 registros  (75.0%)
+  true  (critico):  18,098 registros  (24.76%)
+  false (normal) :  55,002 registros  (75.24%)
 
-Limiar adaptativo calculado: p25(dias_cobertura) ~ 1.43 dias</div>
+Limiar adaptativo calculado: p25(dias_cobertura) ~ 1.25 dias</div>
 </div>
 
 <!-- ============================================================ -->
 <h2>6. Analise de Dados (Etapa 4.5)</h2>
 
 <div class="info-box">
-<strong>Nota metodologica:</strong> A flag de estoque critico usa limiar adaptativo (percentil 25 de dias_cobertura),
-marcando exatamente os 25% de registros com pior cobertura relativa. Por isso, as taxas gerais giram em torno de 25%.
+<strong>Nota metodologica:</strong> A flag de estoque critico usa limiar adaptativo (percentil 25 de dias_cobertura,
+calculado com approxQuantile), marcando cerca de 25% dos registros (24.76%) com pior cobertura relativa. Por isso, as taxas gerais giram em torno de 25%.
 Onde ha diferenciacao real (ex.: P2), o discriminador funciona corretamente.
 </div>
 
@@ -495,11 +500,11 @@ Onde ha diferenciacao real (ex.: P2), o discriminador funciona corretamente.
 <div class="chart-block">
   <h4>P1.1: Taxa de estoque critico por categoria</h4>
   <div class="pre">categoria    total_dias  dias_criticos  pct_critico
-ELECTRONICS    14,600         3,650          25.0%
-CLOTHING       14,600         3,621          24.8%
-GROCERIES      14,600         3,621          24.8%
-TOYS           14,600         3,606          24.7%
-FURNITURE      14,600         3,592          24.6%</div>
+ELECTRONICS    14,521         3,624          25.0%
+CLOTHING       14,626         3,623          24.8%
+GROCERIES      14,611         3,630          24.8%
+TOYS           14,643         3,610          24.7%
+FURNITURE      14,699         3,611          24.6%</div>
   
   <p class="interp">Todas as categorias apresentam taxa proxima a 25% (Electronics lidera com 25.0%, Furniture fecha com 24.6%). A variacao de apenas 0.4pp indica que o risco de ruptura e distribuido de forma uniforme entre segmentos, sem concentracao em categorias especificas. O problema e estrutural, nao setorial.</p>
 </div>
@@ -523,9 +528,9 @@ FURNITURE      14,600         3,592          24.6%</div>
 
 <div class="chart-block">
   <h4>P2: Relacao entre volume de vendas e risco de ruptura</h4>
-  <div class="pre">faixa_demanda          total_reg   taxa_critico  estoque_medio
-Baixa demanda (< P75)   54,825        32.4%          237.6
-Alta demanda  (>= P75)  18,275         1.4%          387.4</div>
+  <div class="pre">faixa_demanda          total_reg   dias_criticos  taxa   vendas_medias  estoque_medio
+Baixa demanda (< P75)   55,098       17,847        32.4%      84.3          237.6
+Alta demanda  (>= P75)  18,002          251         1.4%     296.3          387.4</div>
   
   <p class="interp">Este e o achado mais relevante: produtos de BAIXA demanda tem taxa critica de 32.4%, enquanto produtos de ALTA demanda tem apenas 1.4%. Paradoxalmente, produtos de alto giro recebem mais estoque (387.4 vs 237.6 unidades), o que protege sua cobertura. O risco de ruptura esta concentrado nos produtos de menor visibilidade comercial.</p>
 </div>
@@ -552,8 +557,8 @@ Sem feriado/promocao          25.0%        136.51         274.03</div>
 <div class="chart-block">
   <h4>P4.2: Dias com evento (feriado/promocao) vs dias normais</h4>
   <div class="pre">rotulo                    total   criticos   taxa   vendas_medias
-Feriado/Promocao ativo   36,550     8,955   24.5%      136.42
-Dia normal               36,550     9,135   25.0%      136.51</div>
+Feriado/Promocao ativo   36,353     8,923   24.5%      136.42
+Dia normal               36,747     9,175   25.0%      136.51</div>
   
   <p class="interp">Dias com evento e dias normais apresentam taxas identicas (24.5% vs 25.0%) e vendas medias equivalentes. O indicador binario 0/1 nao captura diferenciacao de risco, o que e esperado para um dataset sintetico. Em dados reais, este comparativo revelaria se acoes promocionais e feriados geram picos de demanda nao cobertos pelo estoque.</p>
 </div>
@@ -562,11 +567,11 @@ Dia normal               36,550     9,135   25.0%      136.51</div>
 <div class="chart-block">
   <h4>P5: Relacao entre preco e risco de estoque critico (complementar)</h4>
   <div class="pre">faixa_preco            taxa    vendas_medias
-Alto preco  (> P75)    ~25%        136.82
-Baixo preco (<= P25)   ~25%        135.83
-Medio preco (P25-P75)  ~25%        136.59
+Alto preco  (> P75)    24.3%       136.81
+Baixo preco (<= P25)   25.0%       135.70
+Medio preco (P25-P75)  24.9%       136.67
 
-Variacao de precos: min 10.0 | max 100.0 | desvio padrao 26.02</div>
+Variacao de precos: min 10.0 | max 100.0 | desvio padrao 26.02 | 8.999 precos distintos</div>
   
   <p class="interp">Apesar da variacao real de precos (desvio padrao 26.02, amplitude de R$10 a R$100), as taxas criticas sao identicas entre faixas (~25%). O preco nao e um fator discriminante neste dataset sintetico, o que e esperado: o risco de ruptura depende de politica de reposicao, nao de preco.</p>
 </div>
