@@ -190,8 +190,8 @@ plt.show()
 # MAGIC **Síntese P1:**
 # MAGIC Olhando as três dimensões em conjunto: as categorias mais críticas (P1.1), os produtos
 # MAGIC recorrentes no ranking (P1.2) e as lojas ou regiões com padrão consistente (P1.3) formam
-# MAGIC o perfil de risco do varejista. A interseção entre essas três listas — produto crítico,
-# MAGIC de categoria crítica, em loja crítica — é onde a atenção deve se concentrar primeiro.
+# MAGIC o perfil de risco do varejista. A interseção entre essas três listas - produto crítico,
+# MAGIC de categoria crítica, em loja crítica - é onde a atenção deve se concentrar primeiro.
 
 # COMMAND ----------
 
@@ -249,7 +249,7 @@ plt.show()
 # MAGIC %md
 # MAGIC **Interpretação P2:**
 # MAGIC Uma taxa de ruptura significativamente maior em produtos de alta demanda confirma que o volume
-# MAGIC de vendas pressiona o estoque além do planejado — o estoque de segurança não está calibrado
+# MAGIC de vendas pressiona o estoque além do planejado - o estoque de segurança não está calibrado
 # MAGIC pelo giro real. Se as taxas forem próximas entre as duas faixas, o problema é estrutural e
 # MAGIC independe do volume: a política de reposição falha para todos os produtos igualmente.
 # MAGIC Em ambos os casos, o nível médio de estoque por faixa ajuda a entender se produtos de alta
@@ -401,7 +401,7 @@ print(df_p4_feriado[["rotulo", "total", "criticos", "taxa", "vendas_medias"]].to
 # MAGIC Vendas médias mais altas combinadas com maior taxa crítica nos dias com evento confirmam
 # MAGIC que o desabastecimento ocorre exatamente quando a pressão sobre o produto é maior.
 # MAGIC **Limitação:** como a coluna original não distingue feriado de promoção, a análise
-# MAGIC captura o efeito combinado — suficiente para identificar o padrão de risco.
+# MAGIC captura o efeito combinado - suficiente para identificar o padrão de risco.
 
 # COMMAND ----------
 
@@ -437,7 +437,7 @@ print(stats_preco.to_string(index=False))
 # MAGIC Antes de interpretar a relação entre preço e ruptura, é necessário verificar se há variação
 # MAGIC real de preços no dataset. Um desvio padrão próximo de zero indica que os produtos têm preços
 # MAGIC semelhantes, o que limita o poder explicativo dessa variável. Se for esse o caso, os resultados
-# MAGIC do gráfico abaixo devem ser lidos com cautela — diferenças na taxa de ruptura entre faixas de
+# MAGIC do gráfico abaixo devem ser lidos com cautela - diferenças na taxa de ruptura entre faixas de
 # MAGIC preço podem ser estatisticamente irrelevantes.
 
 # COMMAND ----------
@@ -503,8 +503,8 @@ plt.show()
 # MAGIC não é aleatório. Ele se concentra em categorias específicas, em produtos de maior giro, em
 # MAGIC lojas com menor capacidade operacional e em períodos previsíveis do calendário.
 # MAGIC
-# MAGIC O achado mais relevante é que os dois principais gatilhos de ruptura — promoções e sazonalidade
-# MAGIC — são completamente antecipáveis. Isso significa que a maioria dos eventos críticos identificados
+# MAGIC O achado mais relevante é que os dois principais gatilhos de ruptura - promoções e sazonalidade
+# MAGIC - são completamente antecipáveis. Isso significa que a maioria dos eventos críticos identificados
 # MAGIC poderia ter sido evitada com planejamento de reposição baseado em dados históricos.
 # MAGIC
 # MAGIC **Recomendações principais:**

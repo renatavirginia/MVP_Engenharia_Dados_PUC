@@ -241,7 +241,7 @@ df = (
 # MAGIC ## 2.4 Indicador feriado_ou_promocao_ativo
 # MAGIC
 # MAGIC A coluna `feriado_ou_promocao` é um inteiro binário (0 ou 1) que não distingue
-# MAGIC feriado de promoção — qualquer separação seria arbitrária e incorreta.
+# MAGIC feriado de promoção - qualquer separação seria arbitrária e incorreta.
 # MAGIC Criamos um único indicador booleano fiel ao dado original.
 
 # COMMAND ----------
@@ -249,7 +249,7 @@ df = (
 print("Valores únicos em feriado_ou_promocao:")
 df.select("feriado_ou_promocao").distinct().show()
 
-# Coluna original é inteiro 0/1 — não distingue feriado de promoção
+# Coluna original é inteiro 0/1 - não distingue feriado de promoção
 df = df.withColumn(
     "feriado_ou_promocao_ativo",
     F.col("feriado_ou_promocao").cast("integer") == 1

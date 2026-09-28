@@ -108,7 +108,7 @@ df.printSchema()
 # MAGIC ## 5. Indicador feriado_ou_promocao_ativo
 # MAGIC
 # MAGIC A coluna `feriado_ou_promocao` é um inteiro binário (0 ou 1) que não distingue
-# MAGIC feriado de promoção — qualquer separação seria arbitrária e incorreta.
+# MAGIC feriado de promoção - qualquer separação seria arbitrária e incorreta.
 # MAGIC Criamos um único indicador booleano fiel ao dado original.
 
 # COMMAND ----------
@@ -116,7 +116,7 @@ df.printSchema()
 print("Valores únicos em feriado_ou_promocao:")
 df.select("feriado_ou_promocao").distinct().show()
 
-# Coluna original é inteiro 0/1 — não distingue feriado de promoção
+# Coluna original é inteiro 0/1 - não distingue feriado de promoção
 df = df.withColumn(
     "feriado_ou_promocao_ativo",
     F.col("feriado_ou_promocao").cast("integer") == 1
@@ -247,7 +247,7 @@ spark.table(f"{CATALOG}.{SCHEMA_SILVER}.{TABLE_OUT}").display()
 # MAGIC |---|---|
 # MAGIC | Renomeação de colunas | Nomes padronizados em português |
 # MAGIC | Conversão de tipos | `data` → DateType, numéricos → Int/Double |
-# MAGIC | Indicador feriado/promoção | Criado indicador único `feriado_ou_promocao_ativo` (0/1, sem distinção entre feriado e promoção — coluna original não permite) |
+# MAGIC | Indicador feriado/promoção | Criado indicador único `feriado_ou_promocao_ativo` (0/1, sem distinção entre feriado e promoção - coluna original não permite) |
 # MAGIC | Padronização de strings | Trim + uppercase em categorias e regiões |
 # MAGIC | Duplicatas | Removidas por chave `loja_id + produto_id + data` |
 # MAGIC | Nulos em colunas essenciais | Linhas removidas |
