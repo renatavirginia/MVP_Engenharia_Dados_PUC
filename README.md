@@ -451,9 +451,9 @@ A verificação de qualidade cobriu as três camadas (Bronze, Silver e Gold) em 
 
 ## Conclusão
 
-O achado mais relevante do projeto vem de **P2**: produtos de **baixa demanda concentram 32,4% de dias críticos**, enquanto os de alta demanda apresentam apenas **1,4%**. O resultado é contraintuitivo — produtos de alto giro recebem mais estoque (média de 387 unidades vs 238) e, por isso, ficam menos vulneráveis à ruptura. O risco de ruptura está, portanto, concentrado nos produtos de **menor visibilidade comercial**, que recebem reposição insuficiente.
+O achado mais relevante do projeto vem de **P2**: produtos de **baixa demanda concentram 32,4% de dias críticos**, enquanto os de alta demanda apresentam apenas **1,4%**. O resultado é contraintuitivo, pois produtos de alto giro recebem mais estoque (média de 387 unidades vs 238) e ficam menos vulneráveis à ruptura. O risco de ruptura está, portanto, concentrado nos produtos de **menor visibilidade comercial**, que recebem reposição insuficiente.
 
-As demais perguntas (**P1**, **P3**, **P4** e **P5**) mostram taxas próximas a 25% em todas as dimensões — categoria, loja, região, evento e faixa de preço. Esse comportamento é esperado dado o critério adaptativo (limiar no percentil 25 de `dias_cobertura`) e a natureza **sintética** do dataset, que não codificou variação de demanda associada a eventos (feriado/promoção) ou a preço. A única exceção com sinal claro é a sazonalidade mensal (**P4.1**), em que dezembro concentra o maior valor (25,6%) contra março e setembro nos menores (23,8%).
+As demais perguntas (**P1**, **P3**, **P4** e **P5**) mostram taxas próximas a 25% em todas as dimensões, seja em categoria, loja, região, evento ou faixa de preço. Esse comportamento é esperado dado o critério adaptativo (limiar no percentil 25 de `dias_cobertura`) e a natureza **sintética** do dataset, que não codificou variação de demanda associada a eventos (feriado/promoção) ou a preço. A única exceção com sinal claro é a sazonalidade mensal (**P4.1**), em que dezembro concentra o maior valor (25,6%) contra março e setembro nos menores (23,8%).
 
 **Recomendações de negócio:**
 
