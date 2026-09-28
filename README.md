@@ -1,5 +1,4 @@
 # MVP de Engenharia de Dados: Risco de Ruptura de Estoque no Varejo
-
 **Nome:** Renata Virginia &nbsp;|&nbsp; **Matrícula:** 4052025002400  
 **Plataforma:** Databricks Free Edition &nbsp;|&nbsp; **Dataset:** Retail Store Inventory Forecasting (Kaggle, CC0)
 
